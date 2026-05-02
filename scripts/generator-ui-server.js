@@ -26,13 +26,15 @@ fs.mkdirSync(TMP_DIR, { recursive: true });
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && (req.url === "/" || req.url === "/admin")) {
+    const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
+
+    if (req.method === "GET" && (requestUrl.pathname === "/" || requestUrl.pathname === "/admin")) {
       sendFile(res, path.join(ADMIN_DIR, "index.html"));
       return;
     }
 
-    if (req.method === "GET" && req.url.startsWith("/admin/")) {
-      const requestedPath = path.normalize(req.url.replace(/^\/admin\//, ""));
+    if (req.method === "GET" && requestUrl.pathname.startsWith("/admin/")) {
+      const requestedPath = path.normalize(decodeURIComponent(requestUrl.pathname.replace(/^\/admin\//, "")));
       const filePath = path.join(ADMIN_DIR, requestedPath);
 
       if (!filePath.startsWith(ADMIN_DIR)) {
@@ -44,7 +46,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/api/generate-recipe") {
+    if (req.method === "GET" && requestUrl.pathname.startsWith("/site")) {
+      sendSiteFile(res, requestUrl.pathname);
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/generate-recipe") {
       const upload = await readMultipartImage(req);
       const tempPath = path.join(TMP_DIR, `${Date.now()}-${sanitizeFilename(upload.filename)}`);
       fs.writeFileSync(tempPath, upload.buffer);
@@ -80,6 +87,19 @@ function sendFile(res, filePath) {
     "Cache-Control": "no-store",
   });
   fs.createReadStream(filePath).pipe(res);
+}
+
+function sendSiteFile(res, pathname) {
+  const relativePath = decodeURIComponent(pathname.replace(/^\/site\/?/, "")) || "index.html";
+  const normalizedPath = path.normalize(relativePath);
+  const filePath = path.join(ROOT_DIR, normalizedPath);
+
+  if (!filePath.startsWith(ROOT_DIR)) {
+    sendJson(res, 403, { error: "Forbidden." });
+    return;
+  }
+
+  sendFile(res, filePath);
 }
 
 function sendJson(res, statusCode, payload) {

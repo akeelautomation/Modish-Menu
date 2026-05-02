@@ -227,9 +227,10 @@ function updateQueueRow(row, { state, status, result, error }) {
   if (result) {
     links.hidden = false;
     links.innerHTML = `
-      <a href="${escapeHtml(result.pageUrl || "#")}" target="_blank" rel="noreferrer">${escapeHtml(
+      <a href="${escapeHtml(toSitePreviewUrl(result.pageUrl) || "#")}" target="_blank" rel="noreferrer">${escapeHtml(
         result.title || result.pagePath || "Recipe page"
       )}</a>
+      <a href="/site/" target="_blank" rel="noreferrer">Homepage</a>
       <a href="${escapeHtml(result.uploadedImageUrl || "#")}" target="_blank" rel="noreferrer">R2 image</a>
       <button class="copy copy-row-log" type="button">Copy Log</button>
     `;
@@ -263,6 +264,14 @@ function setLoading(isLoading) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toSitePreviewUrl(value) {
+  if (!value) {
+    return "";
+  }
+
+  return `/site/${String(value).replace(/^\/+/, "")}`;
 }
 
 function revokePreviewUrls() {

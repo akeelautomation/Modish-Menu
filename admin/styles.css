@@ -227,6 +227,10 @@ button {
 }
 
 .results-head {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  justify-content: space-between;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--line);
 }
@@ -335,6 +339,18 @@ h2 {
 
 a {
   color: var(--accent-dark);
+}
+
+.site-preview-link {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff7ed;
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .copy {

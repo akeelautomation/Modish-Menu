@@ -293,7 +293,7 @@ if (recipeTemplate) {
       title: "Creamy Mushroom Spinach Penne Bake",
       description:
         "Tender penne, sauteed mushrooms, and wilted spinach are folded under a garlic-Parmesan cream sauce for a cozy baked pasta.",
-      image: "assets/creamy-mushroom-spinach-penne.jpg",
+      image: "assets/creamy-mushroom-spinach-penne.jpeg",
       alt: "Cream sauce being poured over penne pasta with mushrooms and spinach",
       prepTime: "15 min",
       cookTime: "25 min",
@@ -729,6 +729,7 @@ if (recipeTemplate) {
   const updateRecipeSeo = () => {
     const title = `${recipe.title} | Modish Menu`;
     const description = `${recipe.description} Includes prep time, cook time, servings, ingredients, instructions, and nutrition facts.`;
+    const pinterestSaveUrl = new URL("https://www.pinterest.com/pin/create/button/");
     const prepMinutes = parseDurationMinutes(recipe.prepTime);
     const cookMinutes = parseDurationMinutes(recipe.cookTime);
     const recipeJsonLd = {
@@ -794,6 +795,14 @@ if (recipeTemplate) {
     setMetaContent("name", "twitter:title", title);
     setMetaContent("name", "twitter:description", description);
     setMetaContent("name", "twitter:image", recipeImageAbsoluteUrl);
+
+    pinterestSaveUrl.searchParams.set("url", recipeAbsoluteUrl);
+    pinterestSaveUrl.searchParams.set("media", recipeImageAbsoluteUrl);
+    pinterestSaveUrl.searchParams.set("description", title);
+
+    document.querySelectorAll("[data-pinterest-save-link]").forEach((link) => {
+      link.href = pinterestSaveUrl.href;
+    });
 
     let jsonLdScript = document.querySelector("#recipe-json-ld");
     if (!jsonLdScript) {

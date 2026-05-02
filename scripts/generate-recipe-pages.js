@@ -118,6 +118,14 @@ const buildRecipeJsonLd = (recipe, slug) => {
   };
 };
 
+const buildPinterestSaveUrl = (recipe, slug) => {
+  const saveUrl = new URL("https://www.pinterest.com/pin/create/button/");
+  saveUrl.searchParams.set("url", absoluteUrl(`/recipes/${slug}.html`));
+  saveUrl.searchParams.set("media", assetUrl(recipe.image));
+  saveUrl.searchParams.set("description", `${recipe.title} | Modish Menu`);
+  return saveUrl.href;
+};
+
 const buildSeoBlock = (recipe, slug) => {
   const title = `${recipe.title} | Modish Menu`;
   const description = `${recipe.description} Includes prep time, cook time, servings, ingredients, instructions, and nutrition facts.`;
@@ -238,6 +246,11 @@ const buildRecipePage = (template, catalog, recipe, slug) => {
       '<div class="page-shell" data-recipe-template>',
       `<div class="page-shell" data-recipe-template data-recipe-slug="${escapeHtml(slug)}">`
     );
+
+  page = page.replace(
+    /href="https:\/\/www\.pinterest\.com\/pin\/create\/button\/\?[^"]*"\s+target="_blank"\s+data-pinterest-save-link/,
+    `href="${escapeHtml(buildPinterestSaveUrl(recipe, slug))}"\n                target="_blank"\n                data-pinterest-save-link`
+  );
 
   if (!page.includes("<base href=\"../\" />")) {
     page = page.replace(

@@ -118,6 +118,118 @@ const buildRecipeJsonLd = (recipe, slug) => {
   };
 };
 
+const buildRecipeSchemaGraph = (recipe, slug) => {
+  const prepMinutes = parseDurationMinutes(recipe.prepTime);
+  const cookMinutes = parseDurationMinutes(recipe.cookTime);
+  const recipeUrl = absoluteUrl(`/recipes/${slug}.html`);
+  const imageUrl = assetUrl(recipe.image);
+  const title = `${recipe.title} | Modish Menu`;
+  const publishedDate = "2025-04-26T00:00:00+00:00";
+  const modifiedDate = "2026-05-02T00:00:00+00:00";
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": `${recipeUrl}#article`,
+        isPartOf: { "@id": recipeUrl },
+        author: { "@id": `${SITE_URL}/#organization` },
+        headline: recipe.title,
+        datePublished: publishedDate,
+        dateModified: modifiedDate,
+        publisher: { "@id": `${SITE_URL}/#organization` },
+        image: { "@id": `${recipeUrl}#primaryimage` },
+        thumbnailUrl: imageUrl,
+        articleSection: [recipe.category],
+        inLanguage: "en-US",
+      },
+      {
+        "@type": "WebPage",
+        "@id": recipeUrl,
+        url: recipeUrl,
+        name: title,
+        isPartOf: { "@id": `${SITE_URL}/#website` },
+        primaryImageOfPage: { "@id": `${recipeUrl}#primaryimage` },
+        image: { "@id": `${recipeUrl}#primaryimage` },
+        thumbnailUrl: imageUrl,
+        datePublished: publishedDate,
+        dateModified: modifiedDate,
+        breadcrumb: { "@id": `${recipeUrl}#breadcrumb` },
+        inLanguage: "en-US",
+        potentialAction: [{ "@type": "ReadAction", target: [recipeUrl] }],
+      },
+      {
+        "@type": "ImageObject",
+        inLanguage: "en-US",
+        "@id": `${recipeUrl}#primaryimage`,
+        url: imageUrl,
+        contentUrl: imageUrl,
+        caption: recipe.alt,
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${recipeUrl}#breadcrumb`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+          { "@type": "ListItem", position: 2, name: recipe.category, item: absoluteUrl("/categories.html") },
+          { "@type": "ListItem", position: 3, name: recipe.title },
+        ],
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${SITE_URL}/#website`,
+        url: `${SITE_URL}/`,
+        name: "Modish Menu",
+        description: "Recipes worth savoring.",
+        publisher: { "@id": `${SITE_URL}/#organization` },
+        inLanguage: "en-US",
+      },
+      {
+        "@type": "Organization",
+        "@id": `${SITE_URL}/#organization`,
+        name: "Modish Menu",
+        url: `${SITE_URL}/`,
+      },
+      {
+        "@type": "Recipe",
+        "@id": `${recipeUrl}#recipe`,
+        isPartOf: { "@id": `${recipeUrl}#article` },
+        mainEntityOfPage: recipeUrl,
+        url: recipeUrl,
+        name: recipe.title,
+        author: { "@id": `${SITE_URL}/#organization` },
+        description: recipe.description,
+        datePublished: publishedDate,
+        dateModified: modifiedDate,
+        image: [imageUrl],
+        recipeYield: [recipe.servings, `${recipe.servings} servings`],
+        prepTime: toIsoDuration(prepMinutes),
+        cookTime: toIsoDuration(cookMinutes),
+        totalTime: toIsoDuration(prepMinutes + cookMinutes),
+        recipeCategory: [recipe.category],
+        recipeCuisine: ["American"],
+        keywords: [recipe.category, recipe.difficulty, "Modish Menu recipe"].join(", "),
+        recipeIngredient: recipe.ingredients,
+        recipeInstructions: recipe.instructions.map((step, index) => ({
+          "@type": "HowToStep",
+          name: `Step ${index + 1}`,
+          text: step.replace(/(?:Ã‚Â°F|Â°F|°F)/g, " degrees F"),
+          url: `${recipeUrl}#recipe-step-${index + 1}`,
+        })),
+        nutrition: {
+          "@type": "NutritionInformation",
+          servingSize: "1 serving",
+          calories: `${recipe.nutrition.calories} calories`,
+          proteinContent: recipe.nutrition.protein,
+          carbohydrateContent: recipe.nutrition.carbs,
+          fatContent: recipe.nutrition.fat,
+        },
+      },
+    ],
+  };
+};
+
 const buildPinterestSaveUrl = (recipe, slug) => {
   const saveUrl = new URL("https://www.pinterest.com/pin/create/button/");
   saveUrl.searchParams.set("url", absoluteUrl(`/recipes/${slug}.html`));
@@ -130,10 +242,12 @@ const buildSeoBlock = (recipe, slug) => {
   const title = `${recipe.title} | Modish Menu`;
   const description = `${recipe.description} Includes prep time, cook time, servings, ingredients, instructions, and nutrition facts.`;
   const recipeUrl = absoluteUrl(`/recipes/${slug}.html`);
-  const recipeJsonLd = JSON.stringify(buildRecipeJsonLd(recipe, slug), null, 6).replace(/</g, "\\u003c");
+  const recipeJsonLd = JSON.stringify(buildRecipeSchemaGraph(recipe, slug), null, 6).replace(/</g, "\\u003c");
 
   return `<!-- SEO: recipe rich pins -->
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <link rel="canonical" href="${escapeHtml(recipeUrl)}" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="Modish Menu" />
     <meta property="og:title" content="${escapeHtml(title)}" />
@@ -147,6 +261,9 @@ const buildSeoBlock = (recipe, slug) => {
     />
     <meta property="og:url" content="${escapeHtml(recipeUrl)}" />
     <meta property="article:section" content="${escapeHtml(recipe.category)}" />
+    <meta property="article:published_time" content="2025-04-26T00:00:00+00:00" />
+    <meta property="article:modified_time" content="2026-05-02T00:00:00+00:00" />
+    <meta name="author" content="Modish Menu" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta
@@ -218,7 +335,10 @@ const renderStaticRecipeBody = (html, catalog, recipe) => {
     /(<ol class="instruction-list" data-instruction-list>)[\s\S]*?(<\/ol>)/,
     (_match, open, close) =>
       `${open}\n${recipe.instructions
-        .map((step) => `                  <li class="instruction-step">\n                    ${escapeHtml(step)}\n                  </li>`)
+        .map(
+          (step, index) =>
+            `                  <li class="instruction-step" id="recipe-step-${index + 1}">\n                    ${escapeHtml(step)}\n                  </li>`
+        )
         .join("\n")}\n                ${close}`
   );
   page = page.replace(

@@ -84,7 +84,9 @@ if (document.querySelector(".category-strip") && document.querySelector(".recipe
   });
 }
 
-if (document.querySelector("[data-recipe-template]")) {
+const recipeTemplate = document.querySelector("[data-recipe-template]");
+
+if (recipeTemplate) {
   const recipeCatalog = {
     "whipped-ricotta-toast": {
       category: "Breakfast",
@@ -285,6 +287,50 @@ if (document.querySelector("[data-recipe-template]")) {
         "Finish with lemon juice and parsley, then serve immediately.",
       ],
       related: ["herb-crusted-roast-chicken", "coconut-green-curry", "charred-peach-salad"],
+    },
+    "creamy-mushroom-spinach-penne": {
+      category: "Pasta & Noodles",
+      title: "Creamy Mushroom Spinach Penne Bake",
+      description:
+        "Tender penne, sauteed mushrooms, and wilted spinach are folded under a garlic-Parmesan cream sauce for a cozy baked pasta.",
+      image: "assets/creamy-mushroom-spinach-penne.jpg",
+      alt: "Cream sauce being poured over penne pasta with mushrooms and spinach",
+      prepTime: "15 min",
+      cookTime: "25 min",
+      servings: "6",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "17g",
+        carbs: "58g",
+        fat: "25g",
+      },
+      ingredients: [
+        "1 pound penne pasta",
+        "2 tablespoons olive oil",
+        "12 ounces cremini mushrooms, sliced",
+        "4 garlic cloves, minced",
+        "5 ounces baby spinach",
+        "3 tablespoons unsalted butter",
+        "3 tablespoons all-purpose flour",
+        "2 cups whole milk",
+        "1 cup heavy cream",
+        "1 cup finely grated Parmesan cheese",
+        "1 teaspoon Italian seasoning",
+        "1/2 teaspoon kosher salt",
+        "1/2 teaspoon cracked black pepper",
+        "1 cup shredded mozzarella cheese",
+      ],
+      instructions: [
+        "Heat the oven to 375°F and lightly grease a 9-by-13-inch baking dish.",
+        "Cook the penne in well-salted water until just shy of al dente, then drain and transfer it to the baking dish.",
+        "Warm the olive oil in a large skillet, then saute the mushrooms until browned and their moisture has cooked off.",
+        "Stir in the garlic and spinach, cooking just until the spinach wilts, then fold the mixture through the pasta.",
+        "Melt the butter in the same skillet, whisk in the flour, then slowly whisk in the milk and cream until smooth and lightly thickened.",
+        "Stir in the Parmesan, Italian seasoning, salt, and pepper, then pour the sauce over the pasta and scatter mozzarella on top.",
+        "Bake until bubbling around the edges and lightly golden on top, about 15 minutes, then rest for 5 minutes before serving.",
+      ],
+      related: ["chili-crab-linguine", "roasted-tomato-basil-soup", "sea-salt-focaccia"],
     },
     "coconut-green-curry": {
       category: "Vegan",
@@ -568,10 +614,25 @@ if (document.querySelector("[data-recipe-template]")) {
     },
   };
 
-  const recipeSlug = new URLSearchParams(window.location.search).get("recipe") || "herb-crusted-roast-chicken";
-  const recipe = recipeCatalog[recipeSlug] || recipeCatalog["herb-crusted-roast-chicken"];
-  const recipeUrl = `recipe.html?recipe=${recipeSlug in recipeCatalog ? recipeSlug : "herb-crusted-roast-chicken"}`;
+  const getSlugFromPath = () => {
+    const match = window.location.pathname.match(/\/recipes\/([^/]+)\.html$/);
+    return match ? decodeURIComponent(match[1]) : "";
+  };
+
+  const defaultRecipeSlug = "herb-crusted-roast-chicken";
+  const requestedRecipeSlug =
+    recipeTemplate.dataset.recipeSlug ||
+    getSlugFromPath() ||
+    new URLSearchParams(window.location.search).get("recipe") ||
+    defaultRecipeSlug;
+  const recipeSlug = requestedRecipeSlug in recipeCatalog ? requestedRecipeSlug : defaultRecipeSlug;
+  const recipe = recipeCatalog[recipeSlug];
+  const recipeUrl = `recipes/${recipeSlug}.html`;
+  const recipeAbsoluteUrl = new URL(recipeUrl, document.baseURI).href;
+  const recipeImageAbsoluteUrl = new URL(recipe.image, document.baseURI).href;
   const relatedCatalog = recipe.related.map((slug) => [slug, recipeCatalog[slug]]).filter((entry) => entry[1]);
+
+  const getRecipeHref = (slug) => `recipes/${slug}.html`;
 
   const setText = (selector, value) => {
     document.querySelectorAll(selector).forEach((element) => {
@@ -623,7 +684,7 @@ if (document.querySelector("[data-recipe-template]")) {
     relatedCatalog
       .map(
         ([slug, relatedRecipe]) => `
-          <a class="related-card" href="recipe.html?recipe=${slug}">
+          <a class="related-card" href="${getRecipeHref(slug)}">
             <img
               class="related-image"
               src="${relatedRecipe.image}"
@@ -639,15 +700,113 @@ if (document.querySelector("[data-recipe-template]")) {
       .join("")
   );
 
-  document.title = `${recipe.title} | Modish Menu`;
+  const parseDurationMinutes = (label) => {
+    const hours = Number(label.match(/(\d+)\s*hr/)?.[1] || 0);
+    const minutes = Number(label.match(/(\d+)\s*min/)?.[1] || 0);
+    return hours * 60 + minutes;
+  };
 
-  const metaDescription = document.querySelector('meta[name="description"]');
-  if (metaDescription) {
-    metaDescription.setAttribute(
-      "content",
-      `Make Modish Menu's ${recipe.title.toLowerCase()} with ingredients, instructions, and nutrition facts.`
-    );
-  }
+  const toIsoDuration = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    const hourPart = hours ? `${hours}H` : "";
+    const minutePart = remainingMinutes ? `${remainingMinutes}M` : "";
+    return `PT${hourPart}${minutePart || (!hourPart ? "0M" : "")}`;
+  };
+
+  const setMetaContent = (attributeName, attributeValue, content) => {
+    let element = document.querySelector(`meta[${attributeName}="${attributeValue}"]`);
+
+    if (!element) {
+      element = document.createElement("meta");
+      element.setAttribute(attributeName, attributeValue);
+      document.head.appendChild(element);
+    }
+
+    element.setAttribute("content", content);
+  };
+
+  const updateRecipeSeo = () => {
+    const title = `${recipe.title} | Modish Menu`;
+    const description = `${recipe.description} Includes prep time, cook time, servings, ingredients, instructions, and nutrition facts.`;
+    const prepMinutes = parseDurationMinutes(recipe.prepTime);
+    const cookMinutes = parseDurationMinutes(recipe.cookTime);
+    const recipeJsonLd = {
+      "@context": "https://schema.org",
+      "@type": "Recipe",
+      "@id": `${recipeAbsoluteUrl}#recipe`,
+      mainEntityOfPage: recipeAbsoluteUrl,
+      url: recipeAbsoluteUrl,
+      name: recipe.title,
+      description: recipe.description,
+      image: [recipeImageAbsoluteUrl],
+      author: {
+        "@type": "Organization",
+        name: "Modish Menu",
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "Modish Menu",
+      },
+      datePublished: "2025-04-26",
+      dateModified: "2026-05-02",
+      prepTime: toIsoDuration(prepMinutes),
+      cookTime: toIsoDuration(cookMinutes),
+      totalTime: toIsoDuration(prepMinutes + cookMinutes),
+      recipeYield: `${recipe.servings} servings`,
+      recipeCategory: recipe.category,
+      keywords: [recipe.category, recipe.difficulty, "Modish Menu recipe"].join(", "),
+      recipeIngredient: recipe.ingredients,
+      recipeInstructions: recipe.instructions.map((step, index) => ({
+        "@type": "HowToStep",
+        name: `Step ${index + 1}`,
+        text: step.replace(/Â°F/g, " degrees F"),
+      })),
+      nutrition: {
+        "@type": "NutritionInformation",
+        calories: `${recipe.nutrition.calories} calories`,
+        proteinContent: recipe.nutrition.protein,
+        carbohydrateContent: recipe.nutrition.carbs,
+        fatContent: recipe.nutrition.fat,
+      },
+    };
+
+    document.title = title;
+
+    let canonicalLink = document.querySelector('link[rel="canonical"]');
+    if (!canonicalLink) {
+      canonicalLink = document.createElement("link");
+      canonicalLink.setAttribute("rel", "canonical");
+      document.head.appendChild(canonicalLink);
+    }
+
+    canonicalLink.setAttribute("href", recipeAbsoluteUrl);
+
+    setMetaContent("name", "description", description);
+    setMetaContent("property", "og:type", "article");
+    setMetaContent("property", "og:site_name", "Modish Menu");
+    setMetaContent("property", "og:title", title);
+    setMetaContent("property", "og:description", description);
+    setMetaContent("property", "og:image", recipeImageAbsoluteUrl);
+    setMetaContent("property", "og:url", recipeAbsoluteUrl);
+    setMetaContent("property", "article:section", recipe.category);
+    setMetaContent("name", "twitter:card", "summary_large_image");
+    setMetaContent("name", "twitter:title", title);
+    setMetaContent("name", "twitter:description", description);
+    setMetaContent("name", "twitter:image", recipeImageAbsoluteUrl);
+
+    let jsonLdScript = document.querySelector("#recipe-json-ld");
+    if (!jsonLdScript) {
+      jsonLdScript = document.createElement("script");
+      jsonLdScript.type = "application/ld+json";
+      jsonLdScript.id = "recipe-json-ld";
+      document.head.appendChild(jsonLdScript);
+    }
+
+    jsonLdScript.textContent = JSON.stringify(recipeJsonLd, null, 2);
+  };
+
+  updateRecipeSeo();
 
   const canonicalRecipeLinks = document.querySelectorAll("[data-current-recipe-link]");
   canonicalRecipeLinks.forEach((link) => {

@@ -430,8 +430,11 @@ button:hover,
 }
 
 .recipe-image {
-  aspect-ratio: 3 / 2;
-  object-fit: cover;
+  height: clamp(360px, 74vw, 620px);
+  object-fit: contain;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(202, 108, 71, 0.16), transparent 18rem),
+    linear-gradient(135deg, var(--cream), var(--sand));
 }
 
 .recipe-card-body {
@@ -547,33 +550,114 @@ button:hover,
   color: rgba(47, 33, 25, 0.62);
 }
 
-.recipe-hero-image {
-  margin-top: 1rem;
-  border-radius: var(--radius-lg);
+.recipe-hero-section {
+  padding: 1rem 0 2.5rem;
+}
+
+.recipe-hero-shell {
+  display: grid;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1rem;
+  position: relative;
   overflow: hidden;
+  border: 1px solid rgba(184, 100, 67, 0.14);
+  border-radius: clamp(28px, 5vw, 54px);
+  background:
+    radial-gradient(circle at 9% 14%, rgba(184, 100, 67, 0.22), transparent 18rem),
+    radial-gradient(circle at 92% 86%, rgba(133, 145, 125, 0.24), transparent 20rem),
+    linear-gradient(135deg, rgba(255, 253, 248, 0.94), rgba(239, 226, 210, 0.84));
   box-shadow: var(--shadow-strong);
 }
 
-.recipe-hero-image img {
-  height: 420px;
-  object-fit: cover;
+.recipe-hero-shell::before {
+  content: "";
+  position: absolute;
+  inset: 1rem;
+  border: 1px solid rgba(141, 76, 52, 0.12);
+  border-radius: inherit;
+  pointer-events: none;
 }
 
-.recipe-header {
-  padding: 2rem 0;
+.recipe-hero-image {
+  width: min(100%, 390px);
+  margin: 0 auto;
+  padding: 0.55rem;
+  position: relative;
+  z-index: 1;
+  border-radius: 32px;
+  background:
+    linear-gradient(var(--white), var(--white)) padding-box,
+    linear-gradient(145deg, rgba(184, 100, 67, 0.58), rgba(133, 145, 125, 0.35)) border-box;
+  border: 1px solid transparent;
+  box-shadow: 0 26px 55px rgba(47, 33, 25, 0.18);
+}
+
+.recipe-hero-image img {
+  aspect-ratio: 9 / 16;
+  height: auto;
+  max-height: min(76vh, 760px);
+  border-radius: 24px;
+  object-fit: contain;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(202, 108, 71, 0.13), transparent 14rem),
+    linear-gradient(135deg, var(--cream), var(--sand));
+}
+
+.recipe-hero-copy {
+  position: relative;
+  z-index: 1;
+  padding: 0.5rem;
+}
+
+.recipe-hero-copy .eyebrow {
+  display: block;
+}
+
+.recipe-hero-copy .tag {
+  margin-bottom: 1rem;
+}
+
+.recipe-hero-copy .section-heading {
+  max-width: 11ch;
+  margin-bottom: 1rem;
+  font-size: clamp(3rem, 8vw, 6.8rem);
+  line-height: 0.82;
+}
+
+.recipe-hero-copy .section-copy {
+  max-width: 42rem;
+  font-size: clamp(1rem, 2vw, 1.18rem);
 }
 
 .meta-list {
   display: grid;
   gap: 0.8rem;
-  margin-top: 1.5rem;
+  margin-top: 1.8rem;
 }
 
 .meta-item {
-  padding: 1rem 1.2rem;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 253, 248, 0.84);
-  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(184, 100, 67, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.76);
+  box-shadow: 0 12px 24px rgba(47, 33, 25, 0.06);
+}
+
+.meta-item strong {
+  color: rgba(47, 33, 25, 0.56);
+  font-size: 0.74rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.meta-item span {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .recipe-layout {
@@ -666,8 +750,9 @@ button:hover,
 
 .related-image {
   height: 88px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 12px;
+  background: var(--cream);
 }
 
 .related-title {
@@ -804,6 +889,20 @@ button:hover,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .recipe-hero-shell {
+    grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1fr);
+    gap: clamp(2rem, 5vw, 4.5rem);
+    padding: clamp(1.2rem, 3vw, 2rem);
+  }
+
+  .recipe-hero-image {
+    justify-self: center;
+  }
+
+  .recipe-hero-copy {
+    padding: clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2rem) clamp(1rem, 3vw, 2.5rem) 0;
+  }
+
   .meta-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -835,5 +934,17 @@ button:hover,
 
   .category-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .recipe-hero-shell {
+    grid-template-columns: minmax(330px, 0.58fr) minmax(0, 1fr);
+  }
+
+  .recipe-hero-image {
+    width: min(100%, 430px);
+  }
+
+  .recipe-hero-copy .section-heading {
+    font-size: clamp(4.8rem, 7vw, 8rem);
   }
 }

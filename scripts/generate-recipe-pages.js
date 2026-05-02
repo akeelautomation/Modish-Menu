@@ -3,12 +3,43 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
-const SITE_URL = "https://modishmenu.com";
+const ENV_PATH = path.join(ROOT_DIR, ".env.local");
 const DEFAULT_SLUG = "herb-crusted-roast-chicken";
 
 const mainJsPath = path.join(ROOT_DIR, "main.js");
+const indexPath = path.join(ROOT_DIR, "index.html");
 const recipeTemplatePath = path.join(ROOT_DIR, "recipe.html");
 const recipesDir = path.join(ROOT_DIR, "recipes");
+
+const loadEnvFile = (filePath) => {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  fs.readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return;
+      }
+
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex === -1) {
+        return;
+      }
+
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^["']|["']$/g, "");
+      if (!(key in process.env)) {
+        process.env[key] = value;
+      }
+    });
+};
+
+loadEnvFile(ENV_PATH);
+
+const SITE_URL = (process.env.SITE_URL || "https://modish-menu.pages.dev").replace(/\/+$/, "");
 
 const escapeHtml = (value) =>
   String(value)
@@ -305,6 +336,74 @@ const renderRelatedRecipes = (catalog, relatedSlugs) =>
     )
     .join("");
 
+const imageForCard = (source) => {
+  if (/^https:\/\/pub-[^/]+\.r2\.dev\//i.test(source)) {
+    return source;
+  }
+
+  if (/^https?:\/\//i.test(source)) {
+    return source.replace(/([?&])w=\d+/i, "$1w=900");
+  }
+
+  return source;
+};
+
+const excerpt = (value, maxLength = 132) => {
+  const cleaned = String(value).replace(/\s+/g, " ").trim();
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+
+  return `${cleaned.slice(0, maxLength - 3).trim()}...`;
+};
+
+const renderHomepageRecipeCards = (catalog) =>
+  Object.entries(catalog)
+    .reverse()
+    .slice(0, 9)
+    .map(
+      ([slug, recipe]) => `              <article class="recipe-card" data-category="${escapeHtml(recipe.category)}">
+                <img
+                  class="recipe-image"
+                  src="${escapeHtml(imageForCard(recipe.image))}"
+                  alt="${escapeHtml(recipe.alt)}"
+                />
+                <div class="recipe-card-body">
+                  <span class="tag">${escapeHtml(recipe.category)}</span>
+                  <h3 class="recipe-title">${escapeHtml(recipe.title)}</h3>
+                  <p class="recipe-description">
+                    ${escapeHtml(excerpt(recipe.description))}
+                  </p>
+                  <div class="card-footer">
+                    <span class="meta-badge">${escapeHtml(recipe.cookTime)}</span>
+                    <a class="button button-secondary" href="recipes/${escapeHtml(slug)}.html">View Recipe</a>
+                  </div>
+                </div>
+              </article>`
+    )
+    .join("\n");
+
+const updateHomepageRecipes = (catalog) => {
+  const indexHtml = fs.readFileSync(indexPath, "utf8");
+  const cards = renderHomepageRecipeCards(catalog);
+  let matchedHomepageGrid = false;
+  const updated = indexHtml.replace(
+    /(<div class="recipes-grid">\r?\n)[\s\S]*?(\r?\n\s*<\/div>\r?\n\s*<\/div>\r?\n\s*<\/section>\r?\n\r?\n\s*<!-- SECTION: pinterest banner -->)/,
+    (_match, open, close) => {
+      matchedHomepageGrid = true;
+      return `${open}${cards}${close}`;
+    }
+  );
+
+  if (!matchedHomepageGrid) {
+    throw new Error("Could not find homepage recipes grid to update.");
+  }
+
+  if (updated !== indexHtml) {
+    fs.writeFileSync(indexPath, updated);
+  }
+};
+
 const renderStaticRecipeBody = (html, catalog, recipe) => {
   let page = html;
 
@@ -392,4 +491,11 @@ Object.entries(catalog).forEach(([slug, recipe]) => {
   fs.writeFileSync(path.join(recipesDir, `${slug}.html`), page);
 });
 
-console.log(`Generated ${Object.keys(catalog).length} recipe pages in ${path.relative(ROOT_DIR, recipesDir)}.`);
+updateHomepageRecipes(catalog);
+
+console.log(
+  `Generated ${Object.keys(catalog).length} recipe pages in ${path.relative(
+    ROOT_DIR,
+    recipesDir
+  )} and refreshed the 9 newest homepage cards.`
+);

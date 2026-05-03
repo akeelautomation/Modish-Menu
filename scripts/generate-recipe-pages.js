@@ -10,6 +10,7 @@ const mainJsPath = path.join(ROOT_DIR, "main.js");
 const indexPath = path.join(ROOT_DIR, "index.html");
 const recipeTemplatePath = path.join(ROOT_DIR, "recipe.html");
 const recipesDir = path.join(ROOT_DIR, "recipes");
+const HOMEPAGE_RECIPE_LIMIT = 21;
 
 const loadEnvFile = (filePath) => {
   if (!fs.existsSync(filePath)) {
@@ -360,7 +361,7 @@ const excerpt = (value, maxLength = 132) => {
 const renderHomepageRecipeCards = (catalog) =>
   Object.entries(catalog)
     .reverse()
-    .slice(0, 9)
+    .slice(0, HOMEPAGE_RECIPE_LIMIT)
     .map(
       ([slug, recipe]) => `              <article class="recipe-card" data-category="${escapeHtml(recipe.category)}">
                 <img
@@ -497,5 +498,5 @@ console.log(
   `Generated ${Object.keys(catalog).length} recipe pages in ${path.relative(
     ROOT_DIR,
     recipesDir
-  )} and refreshed the 9 newest homepage cards.`
+  )} and refreshed the ${HOMEPAGE_RECIPE_LIMIT} newest homepage cards.`
 );

@@ -44,21 +44,67 @@ document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
   });
 });
 
+const categoryResultsUrl = (category) => `recipes.html?category=${encodeURIComponent(category)}#recipes`;
+
 if (document.querySelector(".category-strip") && document.querySelector(".recipes-grid")) {
   const categoryCards = document.querySelectorAll(".category-card[data-category]");
   const recipeCards = document.querySelectorAll(".recipe-card[data-category]");
-  let activeCategory = "";
+  const categoryTitle = document.querySelector("[data-category-results-title]");
+  const categoryCopy = document.querySelector("[data-category-results-copy]");
+  const requestedCategory = new URLSearchParams(window.location.search).get("category") || "";
+  const hasRequestedCategory = [...categoryCards].some((card) => card.dataset.category === requestedCategory);
+  let activeCategory = hasRequestedCategory ? requestedCategory : "";
 
-  const applyFilter = (selectedCategory) => {
+  const syncCategoryUi = () => {
+    categoryCards.forEach((item) => {
+      const isActive = item.dataset.category === activeCategory;
+      item.classList.toggle("is-active", isActive);
+      item.setAttribute("aria-pressed", String(isActive));
+    });
+
+    if (categoryTitle) {
+      categoryTitle.textContent = activeCategory ? `${activeCategory} Recipes` : "All Recipes";
+    }
+
+    if (categoryCopy) {
+      categoryCopy.textContent = activeCategory
+        ? `Browse every Modish Menu recipe filed under ${activeCategory}.`
+        : "Browse the full Modish Menu recipe collection, or filter by category.";
+    }
+  };
+
+  const updateCategoryUrl = () => {
+    const url = new URL(window.location.href);
+    if (activeCategory) {
+      url.searchParams.set("category", activeCategory);
+      url.hash = "recipes";
+    } else {
+      url.searchParams.delete("category");
+      url.hash = "";
+    }
+
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
+  const applyFilter = (selectedCategory, { animate = true } = {}) => {
+    const filterCards = () => {
+      recipeCards.forEach((card) => {
+        const matches = !selectedCategory || card.dataset.category === selectedCategory;
+        card.classList.toggle("hidden", !matches);
+      });
+    };
+
+    if (!animate) {
+      filterCards();
+      return;
+    }
+
     recipeCards.forEach((card) => {
       card.classList.add("fading");
     });
 
     window.setTimeout(() => {
-      recipeCards.forEach((card) => {
-        const matches = !selectedCategory || card.dataset.category === selectedCategory;
-        card.classList.toggle("hidden", !matches);
-      });
+      filterCards();
 
       requestAnimationFrame(() => {
         recipeCards.forEach((card) => {
@@ -73,15 +119,14 @@ if (document.querySelector(".category-strip") && document.querySelector(".recipe
       const selectedCategory = card.dataset.category || "";
       activeCategory = activeCategory === selectedCategory ? "" : selectedCategory;
 
-      categoryCards.forEach((item) => {
-        const isActive = item.dataset.category === activeCategory;
-        item.classList.toggle("is-active", isActive);
-        item.setAttribute("aria-pressed", String(isActive));
-      });
-
+      syncCategoryUi();
+      updateCategoryUrl();
       applyFilter(activeCategory);
     });
   });
+
+  syncCategoryUi();
+  applyFilter(activeCategory, { animate: false });
 }
 
 const recipeTemplate = document.querySelector("[data-recipe-template]");
@@ -2765,6 +2810,631 @@ if (recipeTemplate) {
       ],
       related: ["teriyaki-salmon-rice-bowl", "creamy-mushroom-spinach-penne", "crispy-halloumi-hot-honey"],
     },
+    "sweet-potato-toast-with-smoked-salmon": {
+      category: "Lunch",
+      title: "Sweet Potato Toast with Smoked Salmon",
+      description:
+        "A vibrant open-faced toast featuring roasted sweet potato, creamy avocado, and delicate smoked salmon.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991465413-1777991465356-aesthetic-recipes-20.jpeg",
+      alt: "Four slices of sweet potato toast topped with smoked salmon, avocado, and microgreens on a white platter.",
+      prepTime: "15 min",
+      cookTime: "20 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "4 slices sweet potato",
+        "1 ripe avocado",
+        "100g smoked salmon",
+        "1 tbsp capers",
+        "1 tbsp fresh dill",
+        "1 tbsp lemon juice",
+        "1 tsp black sesame seeds",
+        "1 tsp olive oil",
+        "1 tsp salt",
+        "1/2 tsp black pepper",
+      ],
+      instructions: [
+        "Preheat oven to 200°C (400°F).",
+        "Slice sweet potato into 1/2-inch thick rounds.",
+        "Brush sweet potato slices with olive oil and season with salt and pepper.",
+        "Roast for 15-20 minutes until tender and slightly caramelized.",
+        "Mash avocado with lemon juice, salt, and pepper to create a spread.",
+        "Layer mashed avocado onto each roasted sweet potato slice.",
+        "Top with a slice of smoked salmon.",
+        "Garnish with capers, fresh dill, and black sesame seeds.",
+        "Serve immediately on a platter.",
+      ],
+      related: ["whipped-ricotta-toast", "charred-peach-salad", "grilled-salmon-quinoa-power-bowl"],
+    },
+    "smoked-salmon-toast": {
+      category: "Lunch",
+      title: "Smoked Salmon Toast",
+      description:
+        "A classic open-faced sandwich featuring smoked salmon, cream cheese, and fresh toppings on toasted bread.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991486514-1777991486465-aesthetic-recipes-19.jpeg",
+      alt: "Four slices of toasted bread topped with cream cheese, smoked salmon, capers, fennel, apple, and dill on a white platter.",
+      prepTime: "15 min",
+      cookTime: "5 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "4 slices dark rye or pumpernickel bread",
+        "4 oz (115g) cream cheese, softened",
+        "4 oz (115g) smoked salmon, thinly sliced",
+        "1 small fennel bulb, thinly sliced",
+        "1 small green apple, thinly sliced",
+        "1 tbsp capers, drained",
+        "1 tsp fresh dill, chopped",
+        "Freshly ground black pepper",
+        "Flaky sea salt",
+      ],
+      instructions: [
+        "Toast the bread slices until golden and crisp.",
+        "Spread a generous layer of cream cheese on each slice of toast.",
+        "Top with smoked salmon, arranging it evenly.",
+        "Scatter capers over the salmon.",
+        "Layer with thin slices of fennel and green apple.",
+        "Garnish with chopped dill, a sprinkle of black pepper, and flaky sea salt.",
+        "Serve immediately on a platter.",
+      ],
+      related: ["whipped-ricotta-toast", "citrus-fennel-salad", "sea-salt-focaccia"],
+    },
+    "grilled-eggplant-rolls": {
+      category: "Lunch",
+      title: "Grilled Eggplant Rolls",
+      description:
+        "Elegant appetizer featuring grilled eggplant slices rolled with prosciutto, cucumber, and creamy cheese.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991509588-1777991509534-aesthetic-recipes-21.jpeg",
+      alt: "Four grilled eggplant rolls filled with prosciutto, cucumber, and microgreens on a white plate.",
+      prepTime: "15 min",
+      cookTime: "10 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "2 large eggplants, sliced lengthwise into 1/4-inch thick planks",
+        "4 oz thinly sliced prosciutto",
+        "1/2 cup whipped ricotta cheese",
+        "1 small cucumber, thinly sliced",
+        "1/4 cup fresh microgreens or watercress",
+        "2 tbsp extra virgin olive oil",
+        "1 tsp freshly ground black pepper",
+        "1/2 tsp flaky sea salt",
+      ],
+      instructions: [
+        "Preheat grill or grill pan to medium-high heat.",
+        "Brush eggplant planks with olive oil and season with salt and pepper.",
+        "Grill eggplant for 2-3 minutes per side until tender with char marks, then let cool slightly.",
+        "Spread a thin layer of whipped ricotta on each eggplant plank.",
+        "Layer with prosciutto, cucumber slices, and microgreens.",
+        "Carefully roll each plank into a tight cylinder.",
+        "Arrange rolls on a serving platter and drizzle with olive oil.",
+        "Sprinkle with additional black pepper and flaky salt before serving.",
+      ],
+      related: ["whipped-ricotta-toast", "charred-peach-salad", "crispy-halloumi-hot-honey"],
+    },
+    "grilled-steak-quinoa-power-bowl": {
+      category: "Dinner",
+      title: "Grilled Steak Quinoa Power Bowl",
+      description:
+        "A vibrant bowl featuring grilled steak, quinoa, roasted sweet potatoes, black rice, corn, avocado, and a creamy sauce.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991669231-1777991669186-aesthetic-recipes-6.jpeg",
+      alt: "A colorful grain bowl with steak, roasted vegetables, corn, avocado, and a creamy sauce.",
+      prepTime: "20 min",
+      cookTime: "30 min",
+      servings: "4",
+      difficulty: "Medium",
+      nutrition: {
+        calories: "550",
+        protein: "32g",
+        carbs: "65g",
+        fat: "24g",
+      },
+      ingredients: [
+        "1 lb flank steak",
+        "1 cup quinoa",
+        "1/2 cup black rice",
+        "1 cup roasted sweet potatoes (mix of purple and orange)",
+        "1 cup roasted corn kernels",
+        "1 avocado, sliced",
+        "1/2 red onion, thinly sliced",
+        "4 radishes, thinly sliced",
+        "1 cup cooked black beans",
+        "1/2 cup pumpkin seeds",
+        "1/4 cup chopped fresh cilantro",
+        "1/4 cup crumbled feta cheese",
+        "2 tbsp olive oil",
+        "1 tsp smoked paprika",
+        "1 tsp cumin",
+        "Salt and pepper to taste",
+      ],
+      instructions: [
+        "Cook quinoa according to package instructions and set aside.",
+        "Cook black rice according to package instructions and set aside.",
+        "Preheat oven to 400°F (200°C). Toss sweet potatoes with olive oil, smoked paprika, cumin, salt, and pepper. Roast for 25-30 minutes until tender.",
+        "Season steak with salt and pepper. Grill or pan-sear over medium-high heat for 4-5 minutes per side for medium-rare. Let rest, then slice into strips.",
+        "In a large bowl, combine cooked quinoa, black rice, roasted sweet potatoes, black beans, and corn.",
+        "Arrange the bowl with sections of steak, roasted sweet potatoes, black rice, quinoa, corn, avocado slices, red onion, radishes, and pumpkin seeds.",
+        "Drizzle with a creamy sauce (e.g., tahini-lemon dressing or yogurt-based sauce) and garnish with fresh cilantro and crumbled feta.",
+        "Serve immediately.",
+      ],
+      related: ["grilled-salmon-quinoa-power-bowl", "charred-peach-salad", "herb-crusted-roast-chicken"],
+    },
+    "black-bean-sweet-potato-bowl": {
+      category: "Salads",
+      title: "Black Bean and Sweet Potato Power Bowl",
+      description:
+        "A vibrant, plant-based bowl packed with roasted sweet potatoes, black beans, corn, quinoa, and fresh toppings.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991698089-1777991698040-aesthetic-recipes-5.jpeg",
+      alt: "A colorful bowl featuring roasted sweet potatoes, black beans, corn, quinoa, guacamole, and fresh vegetables.",
+      prepTime: "20 min",
+      cookTime: "30 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "1 large sweet potato, peeled and cubed",
+        "1 tablespoon olive oil",
+        "1 teaspoon smoked paprika",
+        "1/2 teaspoon cumin",
+        "1/2 teaspoon salt",
+        "1 can (15 oz) black beans, drained and rinsed",
+        "1 cup corn kernels, grilled or roasted",
+        "1 cup cooked quinoa",
+        "1/2 cup crumbled feta cheese",
+        "1/4 cup pumpkin seeds, toasted",
+        "1/2 cup diced tomatoes",
+        "1/4 cup diced red onion",
+        "1/4 cup chopped cilantro",
+        "1/4 cup chopped green onion",
+        "1/2 cup guacamole",
+        "1/4 cup pickled red onions",
+        "1/4 cup microgreens",
+        "1/4 cup fresh cilantro leaves",
+      ],
+      instructions: [
+        "Preheat oven to 400°F (200°C).",
+        "Toss sweet potato cubes with olive oil, smoked paprika, cumin, and salt. Spread on a baking sheet and roast for 25-30 minutes until tender and golden.",
+        "While sweet potatoes roast, prepare the guacamole by mashing avocado with lime juice, salt, and chopped cilantro. Set aside.",
+        "In a large bowl, combine cooked quinoa, black beans, grilled corn, diced tomatoes, red onion, green onion, and cilantro.",
+        "Divide the quinoa mixture evenly among four bowls.",
+        "Top each bowl with roasted sweet potatoes, crumbled feta cheese, toasted pumpkin seeds, pickled red onions, and a generous dollop of guacamole.",
+        "Garnish with microgreens and fresh cilantro leaves before serving.",
+      ],
+      related: ["grilled-salmon-quinoa-power-bowl", "charred-peach-salad", "crispy-halloumi-hot-honey"],
+    },
+    "vibrant-vegan-rice-bowl": {
+      category: "Lunch",
+      title: "Vibrant Vegan Rice Bowl",
+      description:
+        "A colorful, plant-based bowl featuring roasted tofu, grilled eggplant, edamame, and fresh vegetables with a creamy green sauce.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991729927-1777991729877-aesthetic-recipes-1.jpeg",
+      alt: "A top-down view of a brown ceramic bowl filled with white rice, roasted tofu, grilled eggplant, edamame, red peppers, orange slices, and a green sauce.",
+      prepTime: "20 min",
+      cookTime: "30 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "480",
+        protein: "22g",
+        carbs: "65g",
+        fat: "22g",
+      },
+      ingredients: [
+        "1 cup cooked white rice",
+        "1 block extra-firm tofu, pressed and cubed",
+        "1 tbsp soy sauce",
+        "1 tbsp sesame oil",
+        "1 tbsp cornstarch",
+        "1 eggplant, sliced into rounds",
+        "1 tbsp olive oil",
+        "1 cup shelled edamame",
+        "1 red bell pepper, sliced",
+        "1 orange, segmented",
+        "1 cup shredded carrots",
+        "1/2 cup thinly sliced red onion",
+        "1/4 cup chopped fresh cilantro",
+        "1/4 cup chopped green onions",
+        "1/4 cup black sesame seeds",
+        "1/4 tsp red pepper flakes",
+        "1/2 cup creamy green sauce (avocado or herb-based)",
+        "1 tbsp toasted sesame seeds",
+      ],
+      instructions: [
+        "Press tofu for 15 minutes to remove excess water, then cube and toss with soy sauce, sesame oil, and cornstarch.",
+        "Heat 1 tbsp olive oil in a skillet over medium-high heat and roast tofu cubes until golden and crispy, about 8-10 minutes.",
+        "Preheat oven to 400°F (200°C). Toss eggplant slices with olive oil and roast for 20-25 minutes until tender and slightly charred.",
+        "In a bowl, combine cooked rice, roasted tofu, roasted eggplant, edamame, red bell pepper, orange segments, shredded carrots, and red onion.",
+        "Drizzle with green sauce and sprinkle with black sesame seeds, green onions, red pepper flakes, and toasted sesame seeds.",
+        "Garnish with fresh cilantro and serve immediately.",
+      ],
+      related: ["grilled-salmon-quinoa-power-bowl", "teriyaki-salmon-rice-bowl", "crispy-halloumi-hot-honey"],
+    },
+    "roasted-vegetable-hummus-bowl": {
+      category: "Salads",
+      title: "Roasted Vegetable Hummus Bowl",
+      description:
+        "A vibrant, plant-based bowl featuring roasted vegetables, lentils, and creamy hummus over a bed of grains.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991769360-1777991769313-aesthetic-recipes-7.jpeg",
+      alt: "A colorful bowl filled with roasted vegetables, lentils, hummus, and fresh ingredients.",
+      prepTime: "20 min",
+      cookTime: "30 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "1 cup cooked brown rice",
+        "1 cup cooked black rice",
+        "1 cup cooked green lentils",
+        "1 cup roasted cherry tomatoes",
+        "1 cup roasted broccoli florets",
+        "1 cup roasted zucchini noodles",
+        "1 cup roasted butternut squash cubes",
+        "1 cup roasted white potato cubes",
+        "1 cup roasted figs, halved",
+        "1 cup roasted red cabbage, shredded",
+        "1 cup roasted mushrooms, sliced",
+        "1 cup roasted tofu cubes",
+        "1/2 cup crumbled feta cheese",
+        "1/2 cup chopped walnuts",
+        "1/2 cup chopped fresh chives",
+        "1/2 cup hummus",
+        "2 tbsp olive oil",
+        "1 tsp smoked paprika",
+        "1 tsp ground cumin",
+        "Salt and pepper to taste",
+      ],
+      instructions: [
+        "Preheat oven to 400°F (200°C).",
+        "Toss broccoli, zucchini, butternut squash, white potatoes, and mushrooms with olive oil, smoked paprika, cumin, salt, and pepper. Roast for 25-30 minutes until tender and slightly charred.",
+        "Roast cherry tomatoes separately for 15-20 minutes until blistered.",
+        "In a large bowl, combine brown rice and black rice as the base.",
+        "Arrange roasted vegetables, lentils, roasted tomatoes, roasted broccoli, roasted zucchini noodles, roasted squash, roasted potatoes, roasted figs, roasted red cabbage, roasted mushrooms, and roasted tofu in sections around the bowl.",
+        "Place a generous dollop of hummus in the center of the bowl.",
+        "Top with crumbled feta cheese, chopped walnuts, and fresh chives.",
+        "Serve immediately or store in the refrigerator for up to 3 days.",
+      ],
+      related: ["grilled-salmon-quinoa-power-bowl", "crispy-halloumi-hot-honey", "roasted-tomato-basil-soup"],
+    },
+    "chicken-fricassee": {
+      category: "Dinner",
+      title: "Chicken Fricassée with Mushrooms and Bacon",
+      description:
+        "A rich, savory chicken dish with mushrooms, bacon, and pearl onions in a dark wine sauce.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991842354-1777991842319-aesthetic-recipes-18.jpeg",
+      alt: "A bowl of sliced roasted chicken served over mushrooms, bacon, and pearl onions in a dark sauce, garnished with fresh thyme.",
+      prepTime: "20 min",
+      cookTime: "1 hr 10 min",
+      servings: "4",
+      difficulty: "Medium",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "4 boneless, skin-on chicken thighs",
+        "4 oz thick-cut bacon, diced",
+        "8 oz cremini mushrooms, sliced",
+        "12 pearl onions, peeled",
+        "2 tbsp all-purpose flour",
+        "1 cup dry red wine",
+        "1 cup chicken stock",
+        "1 tsp fresh thyme leaves",
+        "1 tsp fresh rosemary, chopped",
+        "Salt and freshly ground black pepper to taste",
+        "2 tbsp olive oil",
+      ],
+      instructions: [
+        "Season chicken thighs with salt and pepper. Heat olive oil in a large Dutch oven over medium-high heat. Sear chicken, skin-side down, until golden brown, about 6 minutes. Remove and set aside.",
+        "Add bacon to the pot and cook until crispy, about 5 minutes. Remove with a slotted spoon and set aside.",
+        "Add mushrooms and pearl onions to the pot and sauté until browned, about 8 minutes. Sprinkle with flour and stir to coat.",
+        "Pour in red wine, scraping up browned bits, and simmer until reduced by half, about 5 minutes.",
+        "Add chicken stock, thyme, and rosemary. Return chicken and bacon to the pot. Bring to a simmer, cover, and cook for 45 minutes.",
+        "Uncover and cook for an additional 10 minutes until sauce thickens and chicken is cooked through.",
+        "Garnish with fresh thyme and serve hot.",
+      ],
+      related: ["herb-crusted-roast-chicken", "creamy-mushroom-spinach-penne", "roasted-tomato-basil-soup"],
+    },
+    "seared-scallop-and-shrimp-risotto": {
+      category: "Dinner",
+      title: "Seared Scallop and Shrimp Risotto",
+      description:
+        "A creamy yellow risotto topped with seared scallops, shrimp, roasted cherry tomatoes, and fresh herbs.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991864354-1777991864323-aesthetic-recipes-16.jpeg",
+      alt: "A bowl of yellow risotto with seared scallops, shrimp, cherry tomatoes, and herbs, with a pan of the same dish in the background.",
+      prepTime: "20 min",
+      cookTime: "35 min",
+      servings: "4",
+      difficulty: "Medium",
+      nutrition: {
+        calories: "550",
+        protein: "32g",
+        carbs: "52g",
+        fat: "28g",
+      },
+      ingredients: [
+        "1 cup Arborio rice",
+        "4 cups low-sodium chicken broth",
+        "1/2 cup dry white wine",
+        "1 small onion, finely diced",
+        "2 cloves garlic, minced",
+        "1/2 cup dry scallops",
+        "12 large shrimp, peeled and deveined",
+        "1 pint cherry tomatoes, halved",
+        "2 tbsp olive oil",
+        "1 tbsp butter",
+        "1/4 cup grated Parmesan cheese",
+        "1 tsp fresh dill, chopped",
+        "1 tsp fresh chives, chopped",
+        "Salt and black pepper to taste",
+      ],
+      instructions: [
+        "In a medium saucepan, heat the chicken broth over low heat and keep it at a gentle simmer.",
+        "In a large skillet, heat 1 tablespoon of olive oil over medium-high heat. Season the scallops with salt and pepper, then sear them for 2-3 minutes per side until golden brown. Remove and set aside.",
+        "In the same skillet, add the remaining olive oil and sauté the onion until translucent, about 3 minutes. Add the garlic and cook for 30 seconds.",
+        "Add the Arborio rice to the skillet and stir to coat with oil, cooking for 1-2 minutes until the edges become translucent.",
+        "Pour in the white wine and stir until it is mostly absorbed.",
+        "Begin adding the warm broth, one ladle at a time, stirring frequently and waiting until each addition is absorbed before adding the next. This process takes about 18-20 minutes.",
+        "While the risotto is cooking, heat a separate skillet over medium-high heat. Add the shrimp and cook for 2-3 minutes per side until pink and opaque. Remove and set aside.",
+        "In a small pan, heat 1 tablespoon of butter and add the cherry tomatoes. Cook until they begin to burst and soften, about 5 minutes. Season with salt and pepper.",
+        "Once the rice is creamy and tender, stir in the Parmesan cheese, dill, and chives. Season with salt and pepper to taste.",
+        "To serve, spoon the risotto into bowls. Top with the seared scallops, shrimp, and roasted cherry tomatoes. Garnish with additional fresh herbs if desired.",
+      ],
+      related: ["whipped-ricotta-toast", "charred-peach-salad", "grilled-salmon-quinoa-power-bowl"],
+    },
+    "creamy-mushroom-spinach-penne-3": {
+      category: "Pasta & Noodles",
+      title: "Creamy Mushroom Spinach Penne",
+      description:
+        "A rich, savory pasta dish featuring penne, wild mushrooms, crispy bacon, and wilted spinach in a creamy sauce.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991891359-1777991891314-aesthetic-recipes-17.jpeg",
+      alt: "A bowl of creamy penne pasta with mushrooms, bacon, spinach, and roasted tomatoes, served in a white bowl with a skillet in the background.",
+      prepTime: "15 min",
+      cookTime: "25 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "12 oz penne pasta",
+        "8 oz mixed wild mushrooms (cremini, shiitake, oyster), sliced",
+        "4 oz thick-cut bacon, diced",
+        "2 cloves garlic, minced",
+        "1/2 cup dry white wine",
+        "1 cup heavy cream",
+        "1/2 cup grated Parmesan cheese",
+        "4 cups fresh spinach",
+        "1/2 cup chopped toasted hazelnuts",
+        "4 roasted cherry tomatoes",
+        "1/4 cup grated Pecorino Romano",
+        "1 tsp fresh thyme leaves",
+        "Salt and freshly ground black pepper to taste",
+        "2 tbsp olive oil",
+      ],
+      instructions: [
+        "Cook penne pasta in a large pot of salted boiling water according to package instructions until al dente. Reserve 1/2 cup pasta water, then drain.",
+        "In a large cast-iron skillet over medium heat, cook bacon until crispy. Remove with a slotted spoon and set aside, leaving the rendered fat in the pan.",
+        "Add olive oil to the skillet if needed. Sauté mushrooms in the bacon fat until browned and tender, about 6-8 minutes. Remove and set aside with bacon.",
+        "Add garlic to the skillet and sauté for 30 seconds until fragrant.",
+        "Deglaze the pan with white wine, scraping up any browned bits, and simmer until reduced by half.",
+        "Stir in heavy cream and bring to a gentle simmer. Add cooked pasta and toss to coat, adding reserved pasta water as needed to loosen the sauce.",
+        "Stir in Parmesan cheese until melted and creamy. Fold in spinach until wilted.",
+        "Add mushrooms, bacon, and roasted cherry tomatoes to the skillet. Season with salt and pepper to taste.",
+        "Serve immediately, topped with toasted hazelnuts, grated Pecorino Romano, and fresh thyme.",
+      ],
+      related: ["creamy-mushroom-spinach-penne", "roasted-tomato-basil-soup", "crispy-halloumi-hot-honey"],
+    },
+    "grilled-pork-chop-with-barley-wild-rice-stuffing-and-asparagus": {
+      category: "Dinner",
+      title: "Grilled Pork Chop with Barley Wild Rice Stuffing and Asparagus",
+      description:
+        "A succulent grilled pork chop served with a hearty barley and wild rice stuffing, roasted asparagus, and a garnish of fresh herbs.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777991958357-1777991958312-aesthetic-recipes-14.jpeg",
+      alt: "A grilled pork chop with a charred crust sits on a plate next to a mound of barley wild rice stuffing with walnuts and sun-dried tomatoes, accompanied by roasted asparagus spears.",
+      prepTime: "20 min",
+      cookTime: "25 min",
+      servings: "2",
+      difficulty: "Medium",
+      nutrition: {
+        calories: "580",
+        protein: "32g",
+        carbs: "55g",
+        fat: "28g",
+      },
+      ingredients: [
+        "2 bone-in pork chops (1.5 inches thick)",
+        "1 tablespoon olive oil",
+        "1 teaspoon kosher salt",
+        "1/2 teaspoon freshly ground black pepper",
+        "1 sprig fresh thyme",
+        "1 tablespoon unsalted butter",
+        "1/2 cup pearled barley",
+        "1/2 cup wild rice blend",
+        "1/4 cup chopped walnuts",
+        "2 tablespoons chopped fresh parsley",
+        "2 sun-dried tomatoes in oil, chopped",
+        "1 tablespoon olive oil (for stuffing)",
+        "1 bunch asparagus, trimmed",
+        "1/2 teaspoon smoked paprika",
+        "1 tablespoon olive oil (for asparagus)",
+        "1 teaspoon lemon juice",
+        "1/4 teaspoon salt (for asparagus)",
+      ],
+      instructions: [
+        "Pat the pork chops dry with paper towels and season both sides with salt, pepper, and a drizzle of olive oil.",
+        "Heat a grill pan or skillet over medium-high heat and sear the pork chops for 4-5 minutes per side, or until deeply browned and cooked through, basting with butter and thyme during cooking.",
+        "While the pork rests, combine the pearled barley, wild rice, walnuts, sun-dried tomatoes, parsley, olive oil, and a pinch of salt in a bowl.",
+        "In a separate pan, heat olive oil over medium heat and sauté the barley and wild rice mixture for 5 minutes to toast lightly.",
+        "Toss the asparagus with olive oil, smoked paprika, salt, and lemon juice, then roast on a baking sheet at 400°F (200°C) for 12-15 minutes until tender-crisp.",
+        "Plate the pork chop, top with a sprig of thyme, and serve alongside the barley wild rice stuffing and roasted asparagus.",
+      ],
+      related: ["grilled-salmon-quinoa-power-bowl", "herb-crusted-roast-chicken", "crispy-halloumi-hot-honey"],
+    },
+    "grilled-salmon-quinoa-power-bowl-8": {
+      category: "Salads",
+      title: "Quinoa Power Bowl with Tahini Lemon Dressing",
+      description:
+        "A vibrant bowl featuring grilled salmon, quinoa, chickpeas, and fresh vegetables, all tossed in a creamy tahini lemon dressing.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777992129807-1777992129765-aesthetic-recipes-3.jpeg",
+      alt: "A close-up of a colorful quinoa power bowl with grilled salmon, chickpeas, cucumbers, carrots, and citrus segments, drizzled with dressing.",
+      prepTime: "20 min",
+      cookTime: "25 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "1 lb salmon fillet, skin-on",
+        "1 cup quinoa, rinsed",
+        "2 cups water",
+        "1 can (15 oz) chickpeas, drained and rinsed",
+        "1 cucumber, diced",
+        "1 carrot, julienned",
+        "1 orange, segmented",
+        "1 cup mixed greens",
+        "1/4 cup fresh dill, chopped",
+        "1/4 cup fresh mint, chopped",
+        "2 tbsp olive oil",
+        "1 tsp smoked paprika",
+        "1/2 tsp salt",
+        "1/4 tsp black pepper",
+        "1/4 cup tahini",
+        "2 tbsp lemon juice",
+        "1 tbsp honey",
+        "2 tbsp warm water",
+        "1 clove garlic, minced",
+      ],
+      instructions: [
+        "Cook quinoa: Combine quinoa and water in a saucepan. Bring to a boil, reduce heat, cover, and simmer for 15 minutes. Remove from heat and let stand for 5 minutes. Fluff with a fork.",
+        "Prepare salmon: Preheat oven to 400°F (200°C). Place salmon on a parchment-lined baking sheet. Brush with 1 tbsp olive oil, sprinkle with smoked paprika, salt, and black pepper. Bake for 12-15 minutes until cooked through.",
+        "Roast chickpeas: Toss chickpeas with 1 tbsp olive oil, salt, and pepper. Spread on a baking sheet and roast for 15 minutes until crispy.",
+        "Make dressing: Whisk together tahini, lemon juice, honey, warm water, and minced garlic until smooth and creamy.",
+        "Assemble bowls: Divide quinoa among four bowls. Top with mixed greens, diced cucumber, julienned carrot, roasted chickpeas, orange segments, and a piece of grilled salmon. Drizzle generously with tahini lemon dressing and garnish with fresh dill and mint.",
+        "Serve immediately.",
+      ],
+      related: ["grilled-salmon-quinoa-power-bowl", "herb-crusted-roast-chicken", "citrus-fennel-salad"],
+    },
+    "grilled-halloumi-pita-pocket": {
+      category: "Lunch",
+      title: "Grilled Halloumi Pita Pocket",
+      description:
+        "A warm, toasted pita pocket filled with grilled halloumi, wilted spinach, roasted tomatoes, and crumbled feta.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777992615117-1777992615071-aesthetic-recipes-22.jpeg",
+      alt: "Stacked grilled pita pockets filled with halloumi, spinach, tomatoes, and feta cheese, garnished with fresh herbs.",
+      prepTime: "15 min",
+      cookTime: "10 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "4 whole wheat pita breads",
+        "200g halloumi cheese, sliced into 1cm thick slabs",
+        "2 cups fresh spinach leaves",
+        "1 cup cherry tomatoes, halved",
+        "1/2 cup sun-dried tomatoes, chopped",
+        "1/4 cup crumbled feta cheese",
+        "2 tbsp olive oil",
+        "1 tsp dried oregano",
+        "Salt and black pepper to taste",
+        "Fresh mint leaves for garnish",
+      ],
+      instructions: [
+        "Preheat a grill pan or skillet over medium-high heat.",
+        "Brush the pita breads lightly with olive oil and toast them on the grill pan for 1-2 minutes per side until golden and slightly charred. Set aside.",
+        "Brush the halloumi slices with olive oil and season with salt, pepper, and oregano. Grill for 2-3 minutes per side until golden brown and slightly crispy.",
+        "In a small bowl, combine the fresh spinach, cherry tomatoes, and sun-dried tomatoes.",
+        "Assemble the pita pockets by opening each pita and filling with a layer of the tomato-spinach mixture, followed by 2-3 grilled halloumi slices, crumbled feta, and a sprinkle of fresh mint.",
+        "Serve immediately while warm.",
+      ],
+      related: ["crispy-halloumi-hot-honey", "whipped-ricotta-toast", "roasted-tomato-basil-soup"],
+    },
+    "grilled-vegetable-focaccia-sandwich": {
+      category: "Lunch",
+      title: "Grilled Vegetable Focaccia Sandwich",
+      description:
+        "A stack of toasted focaccia sandwiches filled with melted cheese, spinach, red peppers, and red onions.",
+      image: "https://pub-72cdac497dcc43c08cff5703af3d8977.r2.dev/recipe-generator/2026-05-05/1777992757312-1777992757258-aesthetic-recipes-10.jpeg",
+      alt: "Stacked grilled vegetable sandwiches with melted cheese and fresh herbs on a wooden board.",
+      prepTime: "20 min",
+      cookTime: "15 min",
+      servings: "4",
+      difficulty: "Easy",
+      nutrition: {
+        calories: "520",
+        protein: "24g",
+        carbs: "48g",
+        fat: "26g",
+      },
+      ingredients: [
+        "4 slices focaccia bread",
+        "1 cup fresh spinach",
+        "1 red bell pepper, sliced",
+        "1/2 red onion, sliced",
+        "1/2 cup crumbled feta cheese",
+        "1/2 cup shredded mozzarella cheese",
+        "2 tbsp olive oil",
+        "1 tsp dried oregano",
+        "1/4 cup chopped fresh dill",
+        "1/4 cup chopped fresh parsley",
+        "1/2 tsp sea salt",
+        "1/4 tsp black pepper",
+      ],
+      instructions: [
+        "Preheat oven to 375°F (190°C).",
+        "Brush both sides of focaccia slices with olive oil and sprinkle with oregano and sea salt.",
+        "Toast focaccia slices in the oven for 8-10 minutes until golden brown.",
+        "In a skillet over medium heat, sauté red onion and red bell pepper in 1 tbsp olive oil for 5 minutes until softened.",
+        "Add spinach to the skillet and cook until wilted, about 2 minutes.",
+        "Layer the vegetable mixture onto one slice of toasted focaccia, then top with feta and mozzarella cheese.",
+        "Place the second slice of focaccia on top and press gently.",
+        "Return the sandwich to the oven for 5-7 minutes until the cheese is melted and bubbly.",
+        "Remove from oven, let cool slightly, then cut into quarters and stack.",
+        "Garnish with fresh dill and parsley and a sprinkle of sea salt before serving.",
+      ],
+      related: ["whipped-ricotta-toast", "crispy-halloumi-hot-honey", "sea-salt-focaccia"],
+    },
 };
 
   const getSlugFromPath = () => {
@@ -2821,7 +3491,7 @@ if (recipeTemplate) {
 
   const breadcrumbCategoryLink = document.querySelector("[data-breadcrumb-category-link]");
   if (breadcrumbCategoryLink) {
-    breadcrumbCategoryLink.href = "categories.html";
+    breadcrumbCategoryLink.href = categoryResultsUrl(recipe.category);
   }
 
   setHtml(

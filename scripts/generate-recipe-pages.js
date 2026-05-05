@@ -8,9 +8,24 @@ const DEFAULT_SLUG = "herb-crusted-roast-chicken";
 
 const mainJsPath = path.join(ROOT_DIR, "main.js");
 const indexPath = path.join(ROOT_DIR, "index.html");
+const recipesIndexPath = path.join(ROOT_DIR, "recipes.html");
 const recipeTemplatePath = path.join(ROOT_DIR, "recipe.html");
 const recipesDir = path.join(ROOT_DIR, "recipes");
 const HOMEPAGE_RECIPE_LIMIT = 21;
+const CATEGORY_NAMES = [
+  "Breakfast",
+  "Lunch",
+  "Dinner",
+  "Desserts",
+  "Snacks",
+  "Drinks & Cocktails",
+  "Soups & Stews",
+  "Salads",
+  "Baking & Bread",
+  "Pasta & Noodles",
+  "Vegan",
+  "Grilling & BBQ",
+];
 
 const loadEnvFile = (filePath) => {
   if (!fs.existsSync(filePath)) {
@@ -64,6 +79,8 @@ const toIsoDuration = (minutes) => {
 };
 
 const absoluteUrl = (pathname) => `${SITE_URL}${pathname}`;
+const categoryResultsPath = (category) => `recipes.html?category=${encodeURIComponent(category)}#recipes`;
+const categoryResultsUrl = (category) => absoluteUrl(`/${categoryResultsPath(category)}`);
 const assetUrl = (source) => {
   if (/^https?:\/\//i.test(source)) {
     return source;
@@ -204,7 +221,7 @@ const buildRecipeSchemaGraph = (recipe, slug) => {
         "@id": `${recipeUrl}#breadcrumb`,
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-          { "@type": "ListItem", position: 2, name: recipe.category, item: absoluteUrl("/categories.html") },
+          { "@type": "ListItem", position: 2, name: recipe.category, item: categoryResultsUrl(recipe.category) },
           { "@type": "ListItem", position: 3, name: recipe.title },
         ],
       },
@@ -384,6 +401,125 @@ const renderHomepageRecipeCards = (catalog) =>
     )
     .join("\n");
 
+const renderRecipeDirectoryCards = (catalog) =>
+  Object.entries(catalog)
+    .reverse()
+    .map(
+      ([slug, recipe]) => `              <article class="recipe-card" data-category="${escapeHtml(recipe.category)}">
+                <img
+                  class="recipe-image"
+                  src="${escapeHtml(imageForCard(recipe.image))}"
+                  alt="${escapeHtml(recipe.alt)}"
+                />
+                <div class="recipe-card-body">
+                  <span class="tag">${escapeHtml(recipe.category)}</span>
+                  <h3 class="recipe-title">${escapeHtml(recipe.title)}</h3>
+                  <p class="recipe-description">
+                    ${escapeHtml(excerpt(recipe.description))}
+                  </p>
+                  <div class="card-footer">
+                    <span class="meta-badge">${escapeHtml(recipe.cookTime)}</span>
+                    <a class="button button-secondary" href="recipes/${escapeHtml(slug)}.html">View Recipe</a>
+                  </div>
+                </div>
+              </article>`
+    )
+    .join("\n");
+
+const renderCategoryButtons = () =>
+  CATEGORY_NAMES.map(
+    (category) => `              <button class="category-card" type="button" data-category="${escapeHtml(
+      category
+    )}" aria-pressed="false">
+                <h3 class="category-name">${escapeHtml(category)}</h3>
+              </button>`
+  ).join("\n");
+
+const renderRecipesDirectoryPage = (catalog) => `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Recipes | Modish Menu</title>
+    <meta
+      name="description"
+      content="Browse the full Modish Menu recipe collection by category."
+    />
+    <meta name="monetization" content="$modish-menu" />
+    <meta name="p:domain_verify" content="4e0ddfc2a9a0471173a81529345d2760" />
+    <link rel="stylesheet" href="style.css" />
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <!-- SECTION: header -->
+      <header class="site-header">
+        <div class="container nav-wrap">
+          <a class="brand" href="index.html">Modish Menu</a>
+          <button
+            class="nav-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="site-nav"
+            aria-label="Toggle navigation"
+          >
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <nav class="site-nav" id="site-nav" aria-label="Primary">
+            <a class="nav-link" href="index.html">Home</a>
+            <a class="nav-link is-current" href="categories.html">Categories</a>
+            <a class="nav-link" href="about.html">About</a>
+            <a class="nav-link" href="privacy-policy.html">Privacy Policy</a>
+            <a
+              class="nav-link"
+              href="https://www.pinterest.com/ModishMenu/"
+              target="_blank"
+              rel="noreferrer"
+              >Pinterest</a
+            >
+          </nav>
+        </div>
+      </header>
+
+      <main>
+        <!-- SECTION: page intro -->
+        <section class="page-hero">
+          <div class="container">
+            <div class="page-hero-card">
+              <span class="eyebrow">Recipe Directory</span>
+              <h1 class="section-heading" data-category-results-title>All Recipes</h1>
+              <p class="section-copy" data-category-results-copy>
+                Browse the full Modish Menu recipe collection, or filter by category.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION: browse categories -->
+        <section class="section-space" style="padding-top: 1rem;">
+          <div class="container">
+            <div class="category-strip" aria-label="Recipe categories">
+${renderCategoryButtons()}
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION: recipes -->
+        <section class="section-space" id="recipes" style="padding-top: 0;">
+          <div class="container">
+            <div class="recipes-grid">
+${renderRecipeDirectoryCards(catalog)}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
+`;
+
 const updateHomepageRecipes = (catalog) => {
   const indexHtml = fs.readFileSync(indexPath, "utf8");
   const cards = renderHomepageRecipeCards(catalog);
@@ -403,6 +539,10 @@ const updateHomepageRecipes = (catalog) => {
   if (updated !== indexHtml) {
     fs.writeFileSync(indexPath, updated);
   }
+};
+
+const updateRecipeDirectory = (catalog) => {
+  fs.writeFileSync(recipesIndexPath, renderRecipesDirectoryPage(catalog));
 };
 
 const renderStaticRecipeBody = (html, catalog, recipe) => {
@@ -425,6 +565,10 @@ const renderStaticRecipeBody = (html, catalog, recipe) => {
     imageTag
       .replace(/src="[^"]*"/, `src="${escapeHtml(recipe.image)}"`)
       .replace(/alt="[^"]*"/, `alt="${escapeHtml(recipe.alt)}"`)
+  );
+  page = page.replace(
+    /href="[^"]*"\s+data-breadcrumb-category-link/,
+    `href="${escapeHtml(categoryResultsPath(recipe.category))}" data-breadcrumb-category-link`
   );
   page = page.replace(
     /(<ul class="ingredient-list" data-ingredient-list>)[\s\S]*?(<\/ul>)/,
@@ -493,10 +637,11 @@ Object.entries(catalog).forEach(([slug, recipe]) => {
 });
 
 updateHomepageRecipes(catalog);
+updateRecipeDirectory(catalog);
 
 console.log(
   `Generated ${Object.keys(catalog).length} recipe pages in ${path.relative(
     ROOT_DIR,
     recipesDir
-  )} and refreshed the ${HOMEPAGE_RECIPE_LIMIT} newest homepage cards.`
+  )}, refreshed the ${HOMEPAGE_RECIPE_LIMIT} newest homepage cards, and rebuilt recipes.html.`
 );

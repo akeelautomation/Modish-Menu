@@ -11,6 +11,21 @@ const TMP_DIR = path.join(ROOT_DIR, ".recipe-generator-tmp");
 const OPENROUTER_THROTTLE_PATH = path.join(TMP_DIR, "openrouter-last-call.json");
 const DEFAULT_OPENROUTER_MIN_REQUEST_INTERVAL_MS = 25000;
 const DEFAULT_OPENROUTER_RETRY_COOLDOWN_MS = 90000;
+const DEFAULT_OPENROUTER_FALLBACK_MODELS = [
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "openrouter/free",
+];
+const FREE_MODEL_ALLOWLIST = new Set([
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "openrouter/free",
+]);
+const JSON_MODE_FREE_MODELS = new Set(["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free"]);
+const JSON_SCHEMA_FREE_MODELS = new Set(["openrouter/free"]);
+const REPAIR_MODEL_ORDER = ["openrouter/free", "google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free"];
 
 const ALLOWED_CATEGORIES = [
   "Breakfast",
@@ -30,12 +45,15 @@ const ALLOWED_CATEGORIES = [
 const REQUIRED_ENV = [
   "OPENROUTER_API_KEY",
   "OPENROUTER_MODEL",
+  "SITE_URL",
+];
+
+const R2_REQUIRED_ENV = [
   "R2_BUCKET_NAME",
   "R2_ENDPOINT",
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY",
   "R2_PUBLIC_BASE_URL",
-  "SITE_URL",
 ];
 
 const loadEnvFile = (filePath) => {
@@ -72,6 +90,13 @@ const requireEnv = () => {
   }
 };
 
+const requireR2Env = () => {
+  const missing = R2_REQUIRED_ENV.filter((key) => !process.env[key]);
+  if (missing.length) {
+    throw new Error(`Missing required R2 environment values: ${missing.join(", ")}`);
+  }
+};
+
 const slugify = (value) =>
   String(value)
     .toLowerCase()
@@ -89,6 +114,53 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const readIntegerEnv = (key, fallback) => {
   const value = Number(process.env[key]);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+
+const parseModelList = (value) =>
+  String(value || "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+const isAllowedFreeModel = (model) => FREE_MODEL_ALLOWLIST.has(model);
+
+const getRecipeModelOrder = () => {
+  const configuredFallbacks = parseModelList(process.env.OPENROUTER_FALLBACK_MODELS);
+  const fallbackModels = configuredFallbacks.length ? configuredFallbacks : DEFAULT_OPENROUTER_FALLBACK_MODELS;
+  const configuredModels = [process.env.OPENROUTER_MODEL, ...fallbackModels];
+  const modelOrder = [];
+
+  for (const model of configuredModels) {
+    if (!model || modelOrder.includes(model)) {
+      continue;
+    }
+
+    if (!isAllowedFreeModel(model)) {
+      console.log(`Skipping non-free or unapproved OpenRouter model: ${model}`);
+      continue;
+    }
+
+    modelOrder.push(model);
+  }
+
+  if (!modelOrder.length) {
+    throw new Error("No approved free OpenRouter models are configured.");
+  }
+
+  return modelOrder;
+};
+
+const getRepairModelOrder = () => {
+  const configuredModels = [...REPAIR_MODEL_ORDER, ...getRecipeModelOrder()];
+  const modelOrder = [];
+
+  for (const model of configuredModels) {
+    if (!modelOrder.includes(model) && isAllowedFreeModel(model)) {
+      modelOrder.push(model);
+    }
+  }
+
+  return modelOrder;
 };
 
 const readOpenRouterThrottleState = () => {
@@ -154,6 +226,12 @@ const getContentType = (filePath) => {
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
   throw new Error(`Unsupported image type "${ext}". Use JPG, PNG, or WebP.`);
+};
+
+const imagePathToDataUrl = (filePath) => {
+  const contentType = getContentType(filePath);
+  const body = fs.readFileSync(filePath);
+  return `data:${contentType};base64,${body.toString("base64")}`;
 };
 
 const hmac = (key, value, encoding) => crypto.createHmac("sha256", key).update(value).digest(encoding);
@@ -228,7 +306,7 @@ const uploadToR2 = async (imagePath) => {
   return `${normalizeBaseUrl(process.env.R2_PUBLIC_BASE_URL)}/${objectKey}`;
 };
 
-const buildPrompt = (imageUrl) => `You are creating production recipe content for Modish Menu, an editorial recipe website.
+const buildPrompt = () => `You are creating production recipe content for Modish Menu, an editorial recipe website.
 
 Analyze the food image and infer a realistic recipe from it. Return one strict JSON object only, with no markdown.
 
@@ -246,8 +324,6 @@ Rules:
 
 Existing related recipe slug options:
 whipped-ricotta-toast, charred-peach-salad, grilled-salmon-quinoa-power-bowl, teriyaki-salmon-rice-bowl, herb-crusted-roast-chicken, blood-orange-olive-oil-cake, chili-crab-linguine, creamy-mushroom-spinach-penne, coconut-green-curry, crispy-halloumi-hot-honey, rosemary-grapefruit-spritz, roasted-tomato-basil-soup, citrus-fennel-salad, sea-salt-focaccia, harissa-grilled-chicken-skewers
-
-Image URL: ${imageUrl}
 
 JSON shape:
 {
@@ -270,6 +346,70 @@ JSON shape:
   "instructions": ["..."],
   "related": ["existing-slug", "existing-slug", "existing-slug"]
 }`;
+
+const recipeJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "slug",
+    "category",
+    "title",
+    "description",
+    "alt",
+    "prepTime",
+    "cookTime",
+    "servings",
+    "difficulty",
+    "nutrition",
+    "ingredients",
+    "instructions",
+    "related",
+  ],
+  properties: {
+    slug: { type: "string" },
+    category: { type: "string", enum: ALLOWED_CATEGORIES },
+    title: { type: "string" },
+    description: { type: "string" },
+    alt: { type: "string" },
+    prepTime: { type: "string" },
+    cookTime: { type: "string" },
+    servings: { type: "string" },
+    difficulty: { type: "string" },
+    nutrition: {
+      type: "object",
+      additionalProperties: false,
+      required: ["calories", "protein", "carbs", "fat"],
+      properties: {
+        calories: { type: "string" },
+        protein: { type: "string" },
+        carbs: { type: "string" },
+        fat: { type: "string" },
+      },
+    },
+    ingredients: { type: "array", minItems: 6, items: { type: "string" } },
+    instructions: { type: "array", minItems: 4, items: { type: "string" } },
+    related: { type: "array", maxItems: 3, items: { type: "string" } },
+  },
+};
+
+const responseFormatForModel = (model) => {
+  if (JSON_SCHEMA_FREE_MODELS.has(model)) {
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "modish_menu_recipe",
+        strict: true,
+        schema: recipeJsonSchema,
+      },
+    };
+  }
+
+  if (JSON_MODE_FREE_MODELS.has(model)) {
+    return { type: "json_object" };
+  }
+
+  return null;
+};
 
 const extractMessageContent = (payload) => {
   const choice = payload.choices?.[0];
@@ -320,11 +460,12 @@ const summarizeEmptyOpenRouterResponse = (payload) => {
   return JSON.stringify(details);
 };
 
-const postOpenRouter = async (body) => {
+const postOpenRouter = async (body, { model, purpose }) => {
   let lastErrorText = "";
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await throttleOpenRouter();
+    console.log(`OpenRouter ${purpose}: ${model} attempt ${attempt}/3`);
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -352,28 +493,33 @@ const postOpenRouter = async (body) => {
   throw new Error(`OpenRouter request failed: ${lastErrorText}`);
 };
 
-const requestOpenRouterRecipe = async (imageUrl) => {
-  const payload = await postOpenRouter({
-    model: process.env.OPENROUTER_MODEL,
+const requestOpenRouterRecipe = async ({ model, imageDataUrl }) => {
+  const responseFormat = responseFormatForModel(model);
+  const body = {
+    model,
     reasoning: {
       effort: "none",
       exclude: true,
-    },
-    response_format: {
-      type: "json_object",
     },
     messages: [
       {
         role: "user",
         content: [
-          { type: "text", text: buildPrompt(imageUrl) },
-          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "text", text: buildPrompt() },
+          { type: "image_url", image_url: { url: imageDataUrl } },
         ],
       },
     ],
     temperature: 0.15,
     max_tokens: 2200,
-  });
+  };
+
+  if (responseFormat) {
+    body.response_format = responseFormat;
+    body.provider = { require_parameters: true };
+  }
+
+  const payload = await postOpenRouter(body, { model, purpose: "recipe" });
 
   return {
     content: extractMessageContent(payload),
@@ -382,15 +528,13 @@ const requestOpenRouterRecipe = async (imageUrl) => {
   };
 };
 
-const repairRecipeJson = async ({ sourceText, imageUrl }) => {
-  const payload = await postOpenRouter({
-    model: process.env.OPENROUTER_MODEL,
+const requestOpenRouterRepair = async ({ model, sourceText }) => {
+  const responseFormat = responseFormatForModel(model);
+  const body = {
+    model,
     reasoning: {
       effort: "none",
       exclude: true,
-    },
-    response_format: {
-      type: "json_object",
     },
     messages: [
       {
@@ -421,7 +565,6 @@ Use this exact JSON shape:
 
 Allowed categories: ${ALLOWED_CATEGORIES.join(", ")}.
 Existing related recipe slug options: whipped-ricotta-toast, charred-peach-salad, grilled-salmon-quinoa-power-bowl, teriyaki-salmon-rice-bowl, herb-crusted-roast-chicken, blood-orange-olive-oil-cake, chili-crab-linguine, creamy-mushroom-spinach-penne, coconut-green-curry, crispy-halloumi-hot-honey, rosemary-grapefruit-spritz, roasted-tomato-basil-soup, citrus-fennel-salad, sea-salt-focaccia, harissa-grilled-chicken-skewers.
-Image URL: ${imageUrl}
 
 Recipe notes:
 ${sourceText}`,
@@ -429,41 +572,72 @@ ${sourceText}`,
     ],
     temperature: 0,
     max_tokens: 1600,
-  });
+  };
 
-  const content = extractMessageContent(payload);
-  if (!containsJsonObject(content)) {
-    throw new Error(`OpenRouter repair pass did not return JSON. Details: ${summarizeEmptyOpenRouterResponse(payload)}`);
+  if (responseFormat) {
+    body.response_format = responseFormat;
+    body.provider = { require_parameters: true };
   }
 
-  return parseRecipeJson(content);
+  return postOpenRouter(body, { model, purpose: "repair" });
 };
 
-const callOpenRouter = async (imageUrl) => {
-  let lastPayload = null;
-  let repairSource = "";
+const repairRecipeJson = async ({ sourceText }) => {
+  let lastError = null;
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const { content, reasoning, payload } = await requestOpenRouterRecipe(imageUrl);
-    lastPayload = payload;
-    repairSource = content || reasoning || repairSource;
+  for (const model of getRepairModelOrder()) {
+    try {
+      console.log(`Running JSON repair pass with ${model}...`);
+      const payload = await requestOpenRouterRepair({ model, sourceText });
+      const content = extractMessageContent(payload);
 
-    if (containsJsonObject(content)) {
-      return parseRecipeJson(content);
-    }
+      if (!containsJsonObject(content)) {
+        throw new Error(`OpenRouter repair pass did not return JSON. Details: ${summarizeEmptyOpenRouterResponse(payload)}`);
+      }
 
-    if (repairSource) {
-      console.log("OpenRouter did not return final JSON. Running JSON repair pass...");
-      return repairRecipeJson({ sourceText: repairSource, imageUrl });
-    }
-
-    if (attempt < 3) {
-      console.log(`OpenRouter returned empty content. Retrying (${attempt + 1}/3)...`);
-      await sleep(1200 * attempt);
+      return parseAndValidateRecipe(content);
+    } catch (error) {
+      lastError = error;
+      console.log(`Repair model failed: ${model}: ${error.message}`);
     }
   }
 
-  throw new Error(`OpenRouter returned no message content after 3 attempts. Details: ${summarizeEmptyOpenRouterResponse(lastPayload || {})}`);
+  throw lastError || new Error("OpenRouter repair pass failed.");
+};
+
+const callOpenRouter = async (imageDataUrl) => {
+  let lastError = null;
+
+  for (const model of getRecipeModelOrder()) {
+    try {
+      const { content, reasoning, payload } = await requestOpenRouterRecipe({ model, imageDataUrl });
+      const repairSource = content || reasoning;
+
+      if (containsJsonObject(content)) {
+        try {
+          return parseAndValidateRecipe(content);
+        } catch (error) {
+          console.log(`OpenRouter JSON from ${model} failed validation: ${error.message}`);
+          return await repairRecipeJson({
+            sourceText: `${content}\n\nValidation error to fix: ${error.message}`,
+          });
+        }
+      }
+
+      if (repairSource) {
+        console.log(`OpenRouter ${model} did not return final JSON. Running JSON repair pass...`);
+        return await repairRecipeJson({ sourceText: repairSource });
+      }
+
+      lastError = new Error(`OpenRouter ${model} returned empty content. Details: ${summarizeEmptyOpenRouterResponse(payload || {})}`);
+      console.log(lastError.message);
+    } catch (error) {
+      lastError = error;
+      console.log(`Recipe model failed: ${model}: ${error.message}`);
+    }
+  }
+
+  throw lastError || new Error("OpenRouter recipe generation failed.");
 };
 
 const parseRecipeJson = (content) => {
@@ -521,6 +695,8 @@ const normalizeRecipe = (recipe, imageUrl) => {
 
   return normalized;
 };
+
+const parseAndValidateRecipe = (content) => normalizeRecipe(parseRecipeJson(content), "");
 
 const toJsString = (value) => JSON.stringify(value);
 
@@ -618,13 +794,16 @@ const main = async () => {
     throw new Error(`Image file not found: ${resolvedImagePath}`);
   }
 
-  console.log("Uploading image to R2...");
-  const imageUrl = await uploadToR2(resolvedImagePath);
-  console.log(`Uploaded image: ${imageUrl}`);
+  const imageDataUrl = imagePathToDataUrl(resolvedImagePath);
 
   console.log("Requesting recipe from OpenRouter...");
-  const generatedRecipe = await callOpenRouter(imageUrl);
-  const recipe = normalizeRecipe(generatedRecipe, imageUrl);
+  const recipe = await callOpenRouter(imageDataUrl);
+
+  console.log("Uploading image to R2...");
+  requireR2Env();
+  const imageUrl = await uploadToR2(resolvedImagePath);
+  recipe.image = imageUrl;
+  console.log(`Uploaded image: ${imageUrl}`);
 
   console.log(`Generated recipe: ${recipe.title} (${recipe.slug})`);
   insertRecipeIntoCatalog(recipe);

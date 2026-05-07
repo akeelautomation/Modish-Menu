@@ -4,12 +4,14 @@ const path = require("node:path");
 const { execFile } = require("node:child_process");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
+const ENV_PATH = path.join(ROOT_DIR, ".env.local");
+loadEnvFile(ENV_PATH);
 const ADMIN_DIR = path.join(ROOT_DIR, "admin");
 const TMP_DIR = path.join(ROOT_DIR, ".recipe-generator-tmp");
 const GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-from-image.js");
 const PORT = Number(process.env.PORT || 3100);
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
-const GENERATOR_TIMEOUT_MS = 10 * 60 * 1000;
+const GENERATOR_TIMEOUT_MS = Number(process.env.GENERATOR_TIMEOUT_MS || 20 * 60 * 1000);
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -74,6 +76,33 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Modish Menu recipe generator running at http://localhost:${PORT}/admin`);
 });
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  fs.readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return;
+      }
+
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex === -1) {
+        return;
+      }
+
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^["']|["']$/g, "");
+
+      if (!(key in process.env)) {
+        process.env[key] = value;
+      }
+    });
+}
 
 function sendFile(res, filePath) {
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {

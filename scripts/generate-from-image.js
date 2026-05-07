@@ -240,7 +240,7 @@ const sha256 = (value, encoding = "hex") => crypto.createHash("sha256").update(v
 const encodeRfc3986 = (value) =>
   encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 
-const signR2Put = ({ body, contentType, objectKey }) => {
+const signR2Request = ({ method, body = Buffer.alloc(0), contentType, objectKey }) => {
   const endpoint = new URL(process.env.R2_ENDPOINT);
   const bucket = process.env.R2_BUCKET_NAME;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -254,15 +254,22 @@ const signR2Put = ({ body, contentType, objectKey }) => {
   const canonicalUri = `/${bucket}/${encodedKey}`;
   const payloadHash = sha256(body);
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
-  const canonicalHeaders = [
-    `content-type:${contentType}`,
-    `host:${endpoint.host}`,
-    `x-amz-content-sha256:${payloadHash}`,
-    `x-amz-date:${amzDate}`,
-    "",
-  ].join("\n");
-  const canonicalRequest = ["PUT", canonicalUri, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
+  const headersToSign = {
+    host: endpoint.host,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate,
+  };
+
+  if (contentType) {
+    headersToSign["content-type"] = contentType;
+  }
+
+  const signedHeaders = Object.keys(headersToSign).sort().join(";");
+  const canonicalHeaders = `${Object.keys(headersToSign)
+    .sort()
+    .map((key) => `${key}:${headersToSign[key]}`)
+    .join("\n")}\n`;
+  const canonicalRequest = [method, canonicalUri, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
   const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, sha256(canonicalRequest)].join("\n");
   const signingKey = hmac(
     hmac(hmac(hmac(`AWS4${secretAccessKey}`, dateStamp), region), service),
@@ -279,9 +286,9 @@ const signR2Put = ({ body, contentType, objectKey }) => {
     url: `${endpoint.origin}${canonicalUri}`,
     headers: {
       Authorization: authorization,
-      "Content-Type": contentType,
       "X-Amz-Content-Sha256": payloadHash,
       "X-Amz-Date": amzDate,
+      ...(contentType ? { "Content-Type": contentType } : {}),
     },
   };
 };
@@ -289,10 +296,28 @@ const signR2Put = ({ body, contentType, objectKey }) => {
 const uploadToR2 = async (imagePath) => {
   const body = fs.readFileSync(imagePath);
   const contentType = getContentType(imagePath);
-  const ext = path.extname(imagePath).toLowerCase();
-  const baseName = slugify(path.basename(imagePath, ext)) || "recipe-image";
-  const objectKey = `recipe-generator/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${baseName}${ext}`;
-  const signedRequest = signR2Put({ body, contentType, objectKey });
+  const ext = contentType === "image/png" ? ".png" : contentType === "image/webp" ? ".webp" : ".jpg";
+  const imageHash = sha256(body);
+  const objectKey = `recipe-generator/images/${imageHash.slice(0, 2)}/${imageHash}${ext}`;
+  const publicUrl = `${normalizeBaseUrl(process.env.R2_PUBLIC_BASE_URL)}/${objectKey}`;
+  const signedHeadRequest = signR2Request({ method: "HEAD", objectKey });
+  const existingResponse = await fetch(signedHeadRequest.url, {
+    method: "HEAD",
+    headers: signedHeadRequest.headers,
+  });
+
+  if (existingResponse.ok) {
+    console.log(`R2 image already exists, reusing: ${publicUrl}`);
+    return publicUrl;
+  }
+
+  if (existingResponse.status !== 404) {
+    console.log(
+      `R2 duplicate check returned ${existingResponse.status} ${existingResponse.statusText}; uploading to stable hash key.`
+    );
+  }
+
+  const signedRequest = signR2Request({ method: "PUT", body, contentType, objectKey });
   const response = await fetch(signedRequest.url, {
     method: "PUT",
     headers: signedRequest.headers,
@@ -303,7 +328,7 @@ const uploadToR2 = async (imagePath) => {
     throw new Error(`R2 upload failed: ${response.status} ${response.statusText}\n${await response.text()}`);
   }
 
-  return `${normalizeBaseUrl(process.env.R2_PUBLIC_BASE_URL)}/${objectKey}`;
+  return publicUrl;
 };
 
 const buildPrompt = () => `You are creating production recipe content for Modish Menu, an editorial recipe website.

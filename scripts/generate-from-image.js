@@ -11,6 +11,7 @@ const TMP_DIR = path.join(ROOT_DIR, ".recipe-generator-tmp");
 const OPENROUTER_THROTTLE_PATH = path.join(TMP_DIR, "openrouter-last-call.json");
 const DEFAULT_OPENROUTER_MIN_REQUEST_INTERVAL_MS = 25000;
 const DEFAULT_OPENROUTER_RETRY_COOLDOWN_MS = 90000;
+const DEFAULT_OPENROUTER_REQUEST_TIMEOUT_MS = 45000;
 const DEFAULT_OPENROUTER_FALLBACK_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
@@ -111,9 +112,51 @@ const normalizeBaseUrl = (value) => value.replace(/\/+$/, "");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const parseCliArgs = (args) => {
+  const options = {
+    imagePath: "",
+    keywordGuidance: "",
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--keyword-guidance") {
+      options.keywordGuidance = String(args[index + 1] || "").trim();
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--keyword-guidance=")) {
+      options.keywordGuidance = arg.slice("--keyword-guidance=".length).trim();
+      continue;
+    }
+
+    if (!options.imagePath) {
+      options.imagePath = arg;
+    }
+  }
+
+  return options;
+};
+
 const readIntegerEnv = (key, fallback) => {
   const value = Number(process.env[key]);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+
+const fetchWithTimeout = async (url, options, timeoutMs) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const parseModelList = (value) =>
@@ -331,7 +374,21 @@ const uploadToR2 = async (imagePath) => {
   return publicUrl;
 };
 
-const buildPrompt = () => `You are creating production recipe content for Modish Menu, an editorial recipe website.
+const buildKeywordGuidanceBlock = (keywordGuidance) => {
+  const trimmed = String(keywordGuidance || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return `
+
+Title and description guidance:
+- Try to incorporate one or more of these keywords or phrases in the title or description when it fits the visible dish: ${trimmed}
+- You may use the exact wording, a natural variation, or a closely related phrase.
+- Do not force every phrase, and keep the recipe accurate to the image.`;
+};
+
+const buildPrompt = (keywordGuidance) => `You are creating production recipe content for Modish Menu, an editorial recipe website.
 
 Analyze the food image and infer a realistic recipe from it. Return one strict JSON object only, with no markdown.
 
@@ -346,6 +403,7 @@ Rules:
 - Slug must be lowercase kebab-case.
 - Related recipe slugs must be existing recipes from the supplied list when possible.
 - Do not include image URLs in the JSON.
+${buildKeywordGuidanceBlock(keywordGuidance)}
 
 Existing related recipe slug options:
 whipped-ricotta-toast, charred-peach-salad, grilled-salmon-quinoa-power-bowl, teriyaki-salmon-rice-bowl, herb-crusted-roast-chicken, blood-orange-olive-oil-cake, chili-crab-linguine, creamy-mushroom-spinach-penne, coconut-green-curry, crispy-halloumi-hot-honey, rosemary-grapefruit-spritz, roasted-tomato-basil-soup, citrus-fennel-salad, sea-salt-focaccia, harissa-grilled-chicken-skewers
@@ -487,27 +545,57 @@ const summarizeEmptyOpenRouterResponse = (payload) => {
 
 const postOpenRouter = async (body, { model, purpose }) => {
   let lastErrorText = "";
+  const requestTimeoutMs = readIntegerEnv(
+    "OPENROUTER_REQUEST_TIMEOUT_MS",
+    DEFAULT_OPENROUTER_REQUEST_TIMEOUT_MS
+  );
+  const boundedRequestTimeoutMs = Math.max(1000, requestTimeoutMs);
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await throttleOpenRouter();
     console.log(`OpenRouter ${purpose}: ${model} attempt ${attempt}/3`);
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.SITE_URL,
-        "X-Title": "Modish Menu Recipe Generator",
-      },
-      body: JSON.stringify(body),
-    });
+    let response;
+    try {
+      response = await fetchWithTimeout(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": process.env.SITE_URL,
+            "X-Title": "Modish Menu Recipe Generator",
+          },
+          body: JSON.stringify(body),
+        },
+        boundedRequestTimeoutMs
+      );
+    } catch (error) {
+      const timedOut = error.name === "AbortError";
+      lastErrorText =
+        timedOut
+          ? `OpenRouter ${purpose} timed out after ${Math.ceil(boundedRequestTimeoutMs / 1000)}s.`
+          : error.message || "OpenRouter request failed before a response was received.";
+
+      if (timedOut || attempt === 3) {
+        break;
+      }
+
+      console.log(`${lastErrorText} Retrying...`);
+      await applyOpenRouterRetryCooldown(attempt, "timeout");
+      continue;
+    }
 
     if (response.ok) {
       return response.json();
     }
 
     lastErrorText = `${response.status} ${response.statusText}\n${await response.text()}`;
+    if (response.status === 429) {
+      break;
+    }
+
     if (![408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 3) {
       break;
     }
@@ -518,7 +606,7 @@ const postOpenRouter = async (body, { model, purpose }) => {
   throw new Error(`OpenRouter request failed: ${lastErrorText}`);
 };
 
-const requestOpenRouterRecipe = async ({ model, imageDataUrl }) => {
+const requestOpenRouterRecipe = async ({ model, imageDataUrl, keywordGuidance }) => {
   const responseFormat = responseFormatForModel(model);
   const body = {
     model,
@@ -530,7 +618,7 @@ const requestOpenRouterRecipe = async ({ model, imageDataUrl }) => {
       {
         role: "user",
         content: [
-          { type: "text", text: buildPrompt() },
+          { type: "text", text: buildPrompt(keywordGuidance) },
           { type: "image_url", image_url: { url: imageDataUrl } },
         ],
       },
@@ -553,7 +641,7 @@ const requestOpenRouterRecipe = async ({ model, imageDataUrl }) => {
   };
 };
 
-const requestOpenRouterRepair = async ({ model, sourceText }) => {
+const requestOpenRouterRepair = async ({ model, sourceText, keywordGuidance }) => {
   const responseFormat = responseFormatForModel(model);
   const body = {
     model,
@@ -589,6 +677,7 @@ Use this exact JSON shape:
 }
 
 Allowed categories: ${ALLOWED_CATEGORIES.join(", ")}.
+${buildKeywordGuidanceBlock(keywordGuidance)}
 Existing related recipe slug options: whipped-ricotta-toast, charred-peach-salad, grilled-salmon-quinoa-power-bowl, teriyaki-salmon-rice-bowl, herb-crusted-roast-chicken, blood-orange-olive-oil-cake, chili-crab-linguine, creamy-mushroom-spinach-penne, coconut-green-curry, crispy-halloumi-hot-honey, rosemary-grapefruit-spritz, roasted-tomato-basil-soup, citrus-fennel-salad, sea-salt-focaccia, harissa-grilled-chicken-skewers.
 
 Recipe notes:
@@ -607,13 +696,13 @@ ${sourceText}`,
   return postOpenRouter(body, { model, purpose: "repair" });
 };
 
-const repairRecipeJson = async ({ sourceText }) => {
+const repairRecipeJson = async ({ sourceText, keywordGuidance }) => {
   let lastError = null;
 
   for (const model of getRepairModelOrder()) {
     try {
       console.log(`Running JSON repair pass with ${model}...`);
-      const payload = await requestOpenRouterRepair({ model, sourceText });
+      const payload = await requestOpenRouterRepair({ model, sourceText, keywordGuidance });
       const content = extractMessageContent(payload);
 
       if (!containsJsonObject(content)) {
@@ -630,12 +719,12 @@ const repairRecipeJson = async ({ sourceText }) => {
   throw lastError || new Error("OpenRouter repair pass failed.");
 };
 
-const callOpenRouter = async (imageDataUrl) => {
+const callOpenRouter = async (imageDataUrl, keywordGuidance) => {
   let lastError = null;
 
   for (const model of getRecipeModelOrder()) {
     try {
-      const { content, reasoning, payload } = await requestOpenRouterRecipe({ model, imageDataUrl });
+      const { content, reasoning, payload } = await requestOpenRouterRecipe({ model, imageDataUrl, keywordGuidance });
       const repairSource = content || reasoning;
 
       if (containsJsonObject(content)) {
@@ -645,13 +734,14 @@ const callOpenRouter = async (imageDataUrl) => {
           console.log(`OpenRouter JSON from ${model} failed validation: ${error.message}`);
           return await repairRecipeJson({
             sourceText: `${content}\n\nValidation error to fix: ${error.message}`,
+            keywordGuidance,
           });
         }
       }
 
       if (repairSource) {
         console.log(`OpenRouter ${model} did not return final JSON. Running JSON repair pass...`);
-        return await repairRecipeJson({ sourceText: repairSource });
+        return await repairRecipeJson({ sourceText: repairSource, keywordGuidance });
       }
 
       lastError = new Error(`OpenRouter ${model} returned empty content. Details: ${summarizeEmptyOpenRouterResponse(payload || {})}`);
@@ -809,9 +899,9 @@ const main = async () => {
   loadEnvFile(ENV_PATH);
   requireEnv();
 
-  const imagePath = process.argv[2];
+  const { imagePath, keywordGuidance } = parseCliArgs(process.argv.slice(2));
   if (!imagePath) {
-    throw new Error('Usage: node scripts/generate-from-image.js "C:\\path\\to\\recipe-image.jpeg"');
+    throw new Error('Usage: node scripts/generate-from-image.js "C:\\path\\to\\recipe-image.jpeg" [--keyword-guidance "high protein dinner"]');
   }
 
   const resolvedImagePath = path.resolve(imagePath);
@@ -822,7 +912,10 @@ const main = async () => {
   const imageDataUrl = imagePathToDataUrl(resolvedImagePath);
 
   console.log("Requesting recipe from OpenRouter...");
-  const recipe = await callOpenRouter(imageDataUrl);
+  if (keywordGuidance) {
+    console.log(`Using title/description guidance: ${keywordGuidance}`);
+  }
+  const recipe = await callOpenRouter(imageDataUrl, keywordGuidance);
 
   console.log("Uploading image to R2...");
   requireR2Env();

@@ -11,7 +11,9 @@ const TMP_DIR = path.join(ROOT_DIR, ".recipe-generator-tmp");
 const GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-from-image.js");
 const PORT = Number(process.env.PORT || 3100);
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+const MAX_KEYWORD_GUIDANCE_CHARS = 1200;
 const GENERATOR_TIMEOUT_MS = Number(process.env.GENERATOR_TIMEOUT_MS || 20 * 60 * 1000);
+let generatorQueue = Promise.resolve();
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -54,12 +56,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && requestUrl.pathname === "/api/generate-recipe") {
-      const upload = await readMultipartImage(req);
+      const upload = await readMultipartUpload(req);
       const tempPath = path.join(TMP_DIR, `${Date.now()}-${sanitizeFilename(upload.filename)}`);
       fs.writeFileSync(tempPath, upload.buffer);
 
       try {
-        const result = await runGenerator(tempPath);
+        const result = await queueGenerator(tempPath, normalizeKeywordGuidance(upload.fields.keywordGuidance));
         sendJson(res, 200, result);
       } finally {
         fs.rmSync(tempPath, { force: true });
@@ -159,7 +161,7 @@ function readRequestBody(req) {
   });
 }
 
-async function readMultipartImage(req) {
+async function readMultipartUpload(req) {
   const contentType = req.headers["content-type"] || "";
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
 
@@ -170,6 +172,8 @@ async function readMultipartImage(req) {
   const boundary = Buffer.from(`--${boundaryMatch[1] || boundaryMatch[2]}`);
   const body = await readRequestBody(req);
   const parts = splitMultipart(body, boundary);
+  const fields = {};
+  let image = null;
 
   for (const part of parts) {
     const headerEnd = part.indexOf("\r\n\r\n");
@@ -187,15 +191,27 @@ async function readMultipartImage(req) {
         throw new Error("Please upload an image file.");
       }
 
-      return {
+      image = {
         filename,
         contentType: partContentType,
         buffer: content,
       };
+      continue;
+    }
+
+    if (name && !filename) {
+      fields[name] = content.toString("utf8").trim();
     }
   }
 
-  throw new Error("No image field found in upload.");
+  if (!image) {
+    throw new Error("No image field found in upload.");
+  }
+
+  return {
+    ...image,
+    fields,
+  };
 }
 
 function splitMultipart(body, boundary) {
@@ -231,11 +247,20 @@ function trimMultipartContent(buffer) {
   return buffer.slice(start, end);
 }
 
-function runGenerator(imagePath) {
+function normalizeKeywordGuidance(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, MAX_KEYWORD_GUIDANCE_CHARS);
+}
+
+function runGenerator(imagePath, keywordGuidance) {
   return new Promise((resolve, reject) => {
+    const args = [GENERATOR_SCRIPT, imagePath];
+    if (keywordGuidance) {
+      args.push("--keyword-guidance", keywordGuidance);
+    }
+
     execFile(
       process.execPath,
-      [GENERATOR_SCRIPT, imagePath],
+      args,
       {
         cwd: ROOT_DIR,
         timeout: GENERATOR_TIMEOUT_MS,
@@ -265,6 +290,16 @@ function runGenerator(imagePath) {
       }
     );
   });
+}
+
+function queueGenerator(imagePath, keywordGuidance) {
+  const queuedRun = generatorQueue.then(
+    () => runGenerator(imagePath, keywordGuidance),
+    () => runGenerator(imagePath, keywordGuidance)
+  );
+
+  generatorQueue = queuedRun.catch(() => {});
+  return queuedRun;
 }
 
 function sanitizeFilename(value) {

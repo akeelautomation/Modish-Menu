@@ -1,5 +1,6 @@
 const form = document.querySelector("#uploadForm");
 const imageInput = document.querySelector("#imageInput");
+const keywordGuidanceInput = document.querySelector("#keywordGuidance");
 const dropzone = document.querySelector(".dropzone");
 const previewWrap = document.querySelector("#previewWrap");
 const statusEl = document.querySelector("#status");
@@ -11,10 +12,17 @@ const queueList = document.querySelector("#queueList");
 const PROCESS_DELAY_MS = 5000;
 const FAILED_ITEM_RETRY_DELAY_MS = 30000;
 const MAX_ITEM_ATTEMPTS = 2;
+const KEYWORD_GUIDANCE_STORAGE_KEY = "modishMenu.keywordGuidance";
 
 let queuedFiles = [];
 let previewUrls = [];
 let isProcessing = false;
+
+keywordGuidanceInput.value = localStorage.getItem(KEYWORD_GUIDANCE_STORAGE_KEY) || "";
+
+keywordGuidanceInput.addEventListener("input", () => {
+  localStorage.setItem(KEYWORD_GUIDANCE_STORAGE_KEY, keywordGuidanceInput.value);
+});
 
 imageInput.addEventListener("change", () => {
   setQueuedFiles(Array.from(imageInput.files || []));
@@ -46,6 +54,7 @@ form.addEventListener("submit", async (event) => {
   }
 
   isProcessing = true;
+  const keywordGuidance = keywordGuidanceInput.value.trim();
   setLoading(true);
   summary.textContent = `Processing 0 of ${queuedFiles.length}. Each image runs one at a time.`;
   summary.classList.remove("empty");
@@ -64,7 +73,7 @@ form.addEventListener("submit", async (event) => {
     setStatus(`Generating ${index + 1} of ${queuedFiles.length}: ${file.name}`, "loading");
 
     try {
-      const result = await generateRecipeWithRetry(file, row, index, queuedFiles.length);
+      const result = await generateRecipeWithRetry(file, row, index, queuedFiles.length, keywordGuidance);
       completed += 1;
       updateQueueRow(row, {
         state: "success",
@@ -172,9 +181,10 @@ function createQueueRow({ file, index, previewUrl }) {
   return row;
 }
 
-async function generateRecipe(file) {
+async function generateRecipe(file, keywordGuidance) {
   const formData = new FormData();
   formData.append("image", file);
+  formData.append("keywordGuidance", keywordGuidance);
 
   const response = await fetch("/api/generate-recipe", {
     method: "POST",
@@ -189,7 +199,7 @@ async function generateRecipe(file) {
   return data;
 }
 
-async function generateRecipeWithRetry(file, row, index, total) {
+async function generateRecipeWithRetry(file, row, index, total, keywordGuidance) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_ITEM_ATTEMPTS; attempt += 1) {
@@ -198,7 +208,7 @@ async function generateRecipeWithRetry(file, row, index, total) {
         state: "loading",
         status: `Processing ${index + 1} of ${total} - attempt ${attempt}/${MAX_ITEM_ATTEMPTS}`,
       });
-      return await generateRecipe(file);
+      return await generateRecipe(file, keywordGuidance);
     } catch (error) {
       lastError = error;
 
@@ -259,6 +269,7 @@ function setStatus(message, state) {
 function setLoading(isLoading) {
   submitButton.disabled = isLoading;
   clearButton.disabled = isLoading;
+  keywordGuidanceInput.disabled = isLoading;
   submitButton.textContent = isLoading ? "Batch Running..." : "Start Batch";
 }
 

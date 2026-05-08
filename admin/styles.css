@@ -27,7 +27,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -132,6 +133,50 @@ h1 {
   color: var(--muted);
   font-family: "Trebuchet MS", Verdana, sans-serif;
   font-size: 0.95rem;
+}
+
+.guidance-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+}
+
+.guidance-field span {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.guidance-field textarea {
+  width: 100%;
+  min-height: 108px;
+  resize: vertical;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--ink);
+  background: #fffaf1;
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+  line-height: 1.45;
+}
+
+.guidance-field textarea:focus {
+  border-color: rgba(195, 49, 47, 0.5);
+  outline: 3px solid rgba(195, 49, 47, 0.13);
+}
+
+.guidance-field textarea:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.guidance-field small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .preview-wrap {

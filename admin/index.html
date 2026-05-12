@@ -3,63 +3,376 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Modish Menu Recipe Generator</title>
+    <title>Modish Menu Admin Dashboard</title>
+    <meta name="robots" content="noindex, nofollow" />
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">Modish Menu AI kitchen</p>
-        <h1>Turn a folder of food photos into live recipe pages.</h1>
-        <p class="subhead">
-          Queue many dish images. The local server processes one at a time, sends each to R2,
-          asks OpenRouter for recipe data, updates the catalog, and regenerates Recipe Rich Pin pages.
-        </p>
-      </section>
+    <div class="admin-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/admin" aria-label="Modish Menu admin home">
+          <span class="brand-mark">MM</span>
+          <span>
+            <strong>Modish Menu</strong>
+            <small>Admin</small>
+          </span>
+        </a>
 
-      <section class="workspace">
-        <form id="uploadForm" class="card uploader">
-          <label class="dropzone" for="imageInput">
-            <input id="imageInput" name="image" type="file" accept="image/*" multiple required />
-            <span class="drop-title">Drop or choose recipe images</span>
-            <span class="drop-note">Batch mode runs one image at a time. JPG, PNG, or WEBP under 12 MB each.</span>
-          </label>
+        <nav class="admin-nav" aria-label="Admin sections">
+          <button class="nav-item is-active" type="button" data-panel-target="overview">Overview</button>
+          <button class="nav-item" type="button" data-panel-target="recipe-maker">AI Recipe Maker</button>
+          <button class="nav-item" type="button" data-panel-target="content">Content</button>
+          <button class="nav-item" type="button" data-panel-target="adsense">AdSense</button>
+          <button class="nav-item" type="button" data-panel-target="seo">SEO</button>
+          <button class="nav-item" type="button" data-panel-target="settings">Settings</button>
+        </nav>
 
-          <label class="guidance-field" for="keywordGuidance">
-            <span>Title and description guidance</span>
-            <textarea
-              id="keywordGuidance"
-              name="keywordGuidance"
-              rows="4"
-              placeholder="Example: high protein dinner, cozy weeknight, Mediterranean-inspired"
-            ></textarea>
-            <small>
-              Add keywords or phrases the AI should work into the recipe title or description. It can use exact wording or a close variation.
-            </small>
-          </label>
+        <div class="sidebar-card">
+          <span class="label">Local server</span>
+          <strong id="serverState">Checking</strong>
+          <small>Admin tools run locally and are not intended for public indexing.</small>
+        </div>
+      </aside>
 
-          <div id="previewWrap" class="preview-wrap" hidden></div>
-
-          <div class="queue-actions">
-            <button id="submitButton" type="submit">Start Batch</button>
-            <button id="clearButton" class="ghost-button" type="button">Clear Queue</button>
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Website Operations</p>
+            <h1>Admin Dashboard</h1>
           </div>
-          <p id="status" class="status" role="status"></p>
-        </form>
-
-        <section class="card results" aria-live="polite">
-          <div class="results-head">
-            <div>
-              <h2>Batch Queue</h2>
-              <p id="summary" class="empty">Generated recipe pages, R2 image URLs, and run logs will appear here.</p>
-            </div>
-            <a class="site-preview-link" href="/site/" target="_blank" rel="noreferrer">Open Updated Homepage</a>
+          <div class="topbar-actions">
+            <a class="button ghost" href="/site/" target="_blank" rel="noreferrer">Preview Site</a>
+            <button id="refreshAuditButton" class="button dark" type="button">Refresh Audit</button>
           </div>
+        </header>
 
-          <div id="queueList" class="queue-list" hidden></div>
+        <section class="notice">
+          <strong>AdSense note:</strong>
+          This dashboard aligns the site with current Google policy signals, but approval still depends on Google review, ownership verification, traffic quality, and your real publisher ID.
         </section>
-      </section>
-    </main>
+
+        <section id="overview" class="panel is-active" data-panel="overview">
+          <div class="metric-grid">
+            <article class="metric-card">
+              <span class="label">Recipes</span>
+              <strong id="recipeCount">--</strong>
+              <small id="generatedPageCount">Generated pages loading</small>
+            </article>
+            <article class="metric-card">
+              <span class="label">Categories</span>
+              <strong id="categoryCount">--</strong>
+              <small>Recipe taxonomy coverage</small>
+            </article>
+            <article class="metric-card">
+              <span class="label">Policy Pages</span>
+              <strong id="policyScore">--</strong>
+              <small>About, contact, privacy, terms</small>
+            </article>
+            <article class="metric-card">
+              <span class="label">Ad Slots</span>
+              <strong id="adSlotCount">--</strong>
+              <small>Content-separated placements</small>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Readiness</span>
+                  <h2>AdSense Acceptance Checklist</h2>
+                </div>
+                <span id="readinessBadge" class="badge">Audit pending</span>
+              </div>
+              <div id="readinessList" class="checklist"></div>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Content Mix</span>
+                  <h2>Category Distribution</h2>
+                </div>
+              </div>
+              <div id="categoryBars" class="bar-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="recipe-maker" class="panel" data-panel="recipe-maker">
+          <div class="split-grid">
+            <form id="uploadForm" class="card uploader">
+              <div class="card-head">
+                <div>
+                  <span class="label">AI Recipe Maker</span>
+                  <h2>Generate Recipes From Food Photos</h2>
+                </div>
+              </div>
+
+              <label class="dropzone" for="imageInput">
+                <input id="imageInput" name="image" type="file" accept="image/*" multiple required />
+                <span class="drop-title">Drop or choose images</span>
+                <span class="drop-note">Batch mode runs one image at a time. JPG, PNG, or WEBP under 12 MB each.</span>
+              </label>
+
+              <label class="field" for="keywordGuidance">
+                <span>Title and SEO guidance</span>
+                <textarea
+                  id="keywordGuidance"
+                  name="keywordGuidance"
+                  rows="4"
+                  placeholder="Example: high protein dinner, Mediterranean-inspired, easy weeknight meal"
+                ></textarea>
+                <small>Use this for search intent, dietary angle, season, and title tone. Keep it natural.</small>
+              </label>
+
+              <div id="previewWrap" class="preview-wrap" hidden></div>
+
+              <div class="action-row">
+                <button id="submitButton" class="button primary" type="submit">Start Batch</button>
+                <button id="clearButton" class="button ghost" type="button">Clear Queue</button>
+              </div>
+              <p id="status" class="status" role="status"></p>
+            </form>
+
+            <section class="card results" aria-live="polite">
+              <div class="card-head">
+                <div>
+                  <span class="label">Generator Queue</span>
+                  <h2>Batch Results</h2>
+                  <p id="summary" class="muted">Generated recipe pages, R2 image URLs, and run logs will appear here.</p>
+                </div>
+              </div>
+
+              <div id="queueList" class="queue-list" hidden></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="content" class="panel" data-panel="content">
+          <div class="dashboard-grid">
+            <article class="card recipe-editor-card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Recipe Manager</span>
+                  <h2>Modify or Remove Recipes</h2>
+                </div>
+              </div>
+
+              <label class="field" for="recipeSelect">
+                <span>Choose recipe</span>
+                <select id="recipeSelect"></select>
+                <small>Select a recipe from the catalog. Saving regenerates the public static pages.</small>
+              </label>
+
+              <form id="recipeEditorForm" class="recipe-editor" hidden>
+                <div class="settings-grid">
+                  <label class="field" for="editTitle">
+                    <span>Title</span>
+                    <input id="editTitle" name="title" type="text" required />
+                  </label>
+                  <label class="field" for="editCategory">
+                    <span>Category</span>
+                    <input id="editCategory" name="category" type="text" required />
+                  </label>
+                  <label class="field" for="editPrepTime">
+                    <span>Prep time</span>
+                    <input id="editPrepTime" name="prepTime" type="text" />
+                  </label>
+                  <label class="field" for="editCookTime">
+                    <span>Cook time</span>
+                    <input id="editCookTime" name="cookTime" type="text" />
+                  </label>
+                  <label class="field" for="editServings">
+                    <span>Servings</span>
+                    <input id="editServings" name="servings" type="text" />
+                  </label>
+                  <label class="field" for="editDifficulty">
+                    <span>Difficulty</span>
+                    <input id="editDifficulty" name="difficulty" type="text" />
+                  </label>
+                </div>
+
+                <label class="field" for="editDescription">
+                  <span>Description</span>
+                  <textarea id="editDescription" name="description" rows="3" required></textarea>
+                </label>
+
+                <label class="field" for="editImage">
+                  <span>Image URL</span>
+                  <input id="editImage" name="image" type="text" />
+                </label>
+
+                <label class="field" for="editAlt">
+                  <span>Image alt text</span>
+                  <textarea id="editAlt" name="alt" rows="2"></textarea>
+                </label>
+
+                <div class="settings-grid">
+                  <label class="field" for="editCalories">
+                    <span>Calories</span>
+                    <input id="editCalories" name="calories" type="text" />
+                  </label>
+                  <label class="field" for="editProtein">
+                    <span>Protein</span>
+                    <input id="editProtein" name="protein" type="text" />
+                  </label>
+                  <label class="field" for="editCarbs">
+                    <span>Carbs</span>
+                    <input id="editCarbs" name="carbs" type="text" />
+                  </label>
+                  <label class="field" for="editFat">
+                    <span>Fat</span>
+                    <input id="editFat" name="fat" type="text" />
+                  </label>
+                </div>
+
+                <label class="field" for="editIngredients">
+                  <span>Ingredients</span>
+                  <textarea id="editIngredients" name="ingredients" rows="8"></textarea>
+                  <small>One ingredient per line.</small>
+                </label>
+
+                <label class="field" for="editInstructions">
+                  <span>Instructions</span>
+                  <textarea id="editInstructions" name="instructions" rows="8"></textarea>
+                  <small>One step per line.</small>
+                </label>
+
+                <label class="field" for="editRelated">
+                  <span>Related recipe slugs</span>
+                  <textarea id="editRelated" name="related" rows="3"></textarea>
+                  <small>One existing slug per line. Deleted recipe references are removed automatically.</small>
+                </label>
+
+                <div class="action-row">
+                  <button id="saveRecipeButton" class="button primary" type="submit">Save Recipe</button>
+                  <button id="deleteRecipeButton" class="button danger" type="button">Delete Recipe</button>
+                  <a id="openRecipeButton" class="button ghost" href="#" target="_blank" rel="noreferrer">Open Recipe</a>
+                </div>
+                <p id="recipeEditorStatus" class="status" role="status"></p>
+              </form>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Publishing</span>
+                  <h2>Site Actions</h2>
+                </div>
+              </div>
+              <div class="button-grid">
+                <button id="regenerateButton" class="button dark" type="button">Regenerate Static Recipe Pages</button>
+                <a class="button ghost" href="/site/recipes.html" target="_blank" rel="noreferrer">Open Recipe Directory</a>
+                <a class="button ghost" href="/site/contact.html" target="_blank" rel="noreferrer">Open Contact Page</a>
+              </div>
+              <pre id="actionLog" class="log" hidden></pre>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Recent Files</span>
+                  <h2>Recently Generated Recipes</h2>
+                </div>
+              </div>
+              <div id="recentRecipes" class="file-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="adsense" class="panel" data-panel="adsense">
+          <div class="dashboard-grid">
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Monetization</span>
+                  <h2>AdSense Setup</h2>
+                </div>
+              </div>
+              <div class="settings-grid">
+                <label class="field" for="publisherId">
+                  <span>Publisher ID</span>
+                  <input id="publisherId" type="text" placeholder="pub-0000000000000000" />
+                  <small>Use the publisher ID from your AdSense account. The site cannot be fully approved without the real value.</small>
+                </label>
+                <label class="field" for="adClientId">
+                  <span>Ad client</span>
+                  <input id="adClientId" type="text" placeholder="ca-pub-0000000000000000" />
+                  <small>Usually this is ca- plus the publisher ID.</small>
+                </label>
+                <label class="field" for="leaderboardSlot">
+                  <span>Leaderboard slot ID</span>
+                  <input id="leaderboardSlot" type="text" placeholder="1234567890" />
+                </label>
+                <label class="field" for="rectangleSlot">
+                  <span>Rectangle slot ID</span>
+                  <input id="rectangleSlot" type="text" placeholder="0987654321" />
+                </label>
+              </div>
+              <div class="action-row">
+                <button id="saveAdsenseSettings" class="button primary" type="button">Save Locally</button>
+                <button id="copyAdsenseSnippet" class="button ghost" type="button">Copy Snippet</button>
+                <button id="copyAdsTxt" class="button ghost" type="button">Copy ads.txt Line</button>
+              </div>
+              <pre id="adsenseSnippet" class="log"></pre>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Policy Guardrails</span>
+                  <h2>Placement Rules</h2>
+                </div>
+              </div>
+              <ul class="plain-list">
+                <li>Use only "Advertisement" or "Sponsored Links" labels near ad units.</li>
+                <li>Do not place ads inside pop-ups, emails, private messages, or software screens.</li>
+                <li>Keep ads separated from navigation, download-style buttons, and image grids to reduce accidental clicks.</li>
+                <li>Do not refresh pages or ad containers automatically.</li>
+                <li>Keep recipe content visibly more substantial than ads on each page.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="seo" class="panel" data-panel="seo">
+          <div class="dashboard-grid">
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Search</span>
+                  <h2>SEO Assets</h2>
+                </div>
+              </div>
+              <div id="seoAssets" class="checklist"></div>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Structured Data</span>
+                  <h2>Recipe Schema Health</h2>
+                </div>
+              </div>
+              <div id="schemaSummary" class="plain-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="settings" class="panel" data-panel="settings">
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="label">Environment</span>
+                <h2>Required Keys</h2>
+              </div>
+            </div>
+            <div id="environmentList" class="checklist"></div>
+          </article>
+        </section>
+      </main>
+    </div>
 
     <script src="/admin/app.js" type="module"></script>
   </body>

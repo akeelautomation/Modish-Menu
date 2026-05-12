@@ -11,6 +11,7 @@ const indexPath = path.join(ROOT_DIR, "index.html");
 const recipesIndexPath = path.join(ROOT_DIR, "recipes.html");
 const recipeTemplatePath = path.join(ROOT_DIR, "recipe.html");
 const recipesDir = path.join(ROOT_DIR, "recipes");
+const sitemapPath = path.join(ROOT_DIR, "sitemap.xml");
 const HOMEPAGE_RECIPE_LIMIT = 21;
 const CATEGORY_NAMES = [
   "Breakfast",
@@ -469,8 +470,10 @@ const renderRecipesDirectoryPage = (catalog) => `<!DOCTYPE html>
           </button>
           <nav class="site-nav" id="site-nav" aria-label="Primary">
             <a class="nav-link" href="index.html">Home</a>
-            <a class="nav-link is-current" href="categories.html">Categories</a>
+            <a class="nav-link is-current" href="recipes.html">Recipes</a>
+            <a class="nav-link" href="categories.html">Categories</a>
             <a class="nav-link" href="about.html">About</a>
+            <a class="nav-link" href="contact.html">Contact</a>
             <a class="nav-link" href="privacy-policy.html">Privacy Policy</a>
             <a
               class="nav-link"
@@ -515,6 +518,43 @@ ${renderRecipeDirectoryCards(catalog)}
           </div>
         </section>
       </main>
+
+      <!-- SECTION: footer -->
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-grid">
+            <div class="footer-brand">
+              <a class="footer-logo" href="index.html">Modish Menu</a>
+              <p>Recipes worth savoring.</p>
+            </div>
+            <div>
+              <h2 class="eyebrow">Navigate</h2>
+              <div class="footer-links">
+                <a class="footer-link" href="index.html">Home</a>
+                <a class="footer-link" href="recipes.html">Recipes</a>
+                <a class="footer-link" href="categories.html">Categories</a>
+                <a class="footer-link" href="about.html">About</a>
+                <a class="footer-link" href="contact.html">Contact</a>
+                <a class="footer-link" href="privacy-policy.html">Privacy Policy</a>
+                <a class="footer-link" href="terms.html">Terms</a>
+              </div>
+            </div>
+            <div>
+              <h2 class="eyebrow">Social</h2>
+              <div class="footer-socials">
+                <a
+                  class="footer-social"
+                  href="https://www.pinterest.com/ModishMenu/"
+                  target="_blank"
+                  rel="noreferrer"
+                  >Pinterest</a
+                >
+              </div>
+            </div>
+          </div>
+          <div class="footer-bottom">© 2026 Modish Menu. All rights reserved.</div>
+        </div>
+      </footer>
     </div>
   </body>
 </html>
@@ -543,6 +583,39 @@ const updateHomepageRecipes = (catalog) => {
 
 const updateRecipeDirectory = (catalog) => {
   fs.writeFileSync(recipesIndexPath, renderRecipesDirectoryPage(catalog));
+};
+
+const renderSitemap = (catalog) => {
+  const staticPages = [
+    "index.html",
+    "recipes.html",
+    "categories.html",
+    "about.html",
+    "contact.html",
+    "privacy-policy.html",
+    "terms.html",
+  ];
+  const recipePages = Object.keys(catalog).map((slug) => `recipes/${slug}.html`);
+  const today = new Date().toISOString().slice(0, 10);
+  const urls = [...staticPages, ...recipePages]
+    .filter((pagePath) => fs.existsSync(path.join(ROOT_DIR, pagePath)))
+    .map(
+      (pagePath) => `  <url>
+    <loc>${escapeHtml(absoluteUrl(`/${pagePath}`))}</loc>
+    <lastmod>${today}</lastmod>
+  </url>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`;
+};
+
+const updateSitemap = (catalog) => {
+  fs.writeFileSync(sitemapPath, renderSitemap(catalog));
 };
 
 const renderStaticRecipeBody = (html, catalog, recipe) => {
@@ -638,10 +711,11 @@ Object.entries(catalog).forEach(([slug, recipe]) => {
 
 updateHomepageRecipes(catalog);
 updateRecipeDirectory(catalog);
+updateSitemap(catalog);
 
 console.log(
   `Generated ${Object.keys(catalog).length} recipe pages in ${path.relative(
     ROOT_DIR,
     recipesDir
-  )}, refreshed the ${HOMEPAGE_RECIPE_LIMIT} newest homepage cards, and rebuilt recipes.html.`
+  )}, refreshed the ${HOMEPAGE_RECIPE_LIMIT} newest homepage cards, rebuilt recipes.html, and updated sitemap.xml.`
 );

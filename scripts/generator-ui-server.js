@@ -1,14 +1,17 @@
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
+const vm = require("node:vm");
 const { execFile } = require("node:child_process");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const ENV_PATH = path.join(ROOT_DIR, ".env.local");
 loadEnvFile(ENV_PATH);
 const ADMIN_DIR = path.join(ROOT_DIR, "admin");
+const MAIN_JS_PATH = path.join(ROOT_DIR, "main.js");
 const TMP_DIR = path.join(ROOT_DIR, ".recipe-generator-tmp");
 const GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-from-image.js");
+const STATIC_GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-recipe-pages.js");
 const PORT = Number(process.env.PORT || 3100);
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_KEYWORD_GUIDANCE_CHARS = 1200;
@@ -53,6 +56,39 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && requestUrl.pathname.startsWith("/site")) {
       sendSiteFile(res, requestUrl.pathname);
       return;
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/admin-summary") {
+      sendJson(res, 200, buildAdminSummary());
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/regenerate-site") {
+      const result = await runStaticGenerator();
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/recipes") {
+      sendJson(res, 200, buildRecipeEditorList());
+      return;
+    }
+
+    if (requestUrl.pathname.startsWith("/api/recipes/")) {
+      const slug = decodeURIComponent(requestUrl.pathname.replace(/^\/api\/recipes\//, ""));
+
+      if (req.method === "PUT") {
+        const payload = await readJsonBody(req);
+        const result = await updateRecipe(slug, payload);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === "DELETE") {
+        const result = await deleteRecipe(slug);
+        sendJson(res, 200, result);
+        return;
+      }
     }
 
     if (req.method === "POST" && requestUrl.pathname === "/api/generate-recipe") {
@@ -159,6 +195,19 @@ function readRequestBody(req) {
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+async function readJsonBody(req) {
+  const body = await readRequestBody(req);
+  if (!body.length) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(body.toString("utf8"));
+  } catch (_error) {
+    throw new Error("Expected valid JSON request body.");
+  }
 }
 
 async function readMultipartUpload(req) {
@@ -300,6 +349,364 @@ function queueGenerator(imagePath, keywordGuidance) {
 
   generatorQueue = queuedRun.catch(() => {});
   return queuedRun;
+}
+
+function runStaticGenerator() {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [STATIC_GENERATOR_SCRIPT],
+      {
+        cwd: ROOT_DIR,
+        timeout: GENERATOR_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024 * 4,
+      },
+      (error, stdout, stderr) => {
+        const output = `${stdout || ""}${stderr ? `\n${stderr}` : ""}`.trim();
+        if (error) {
+          reject(new Error(output || error.message));
+          return;
+        }
+
+        resolve({ ok: true, output });
+      }
+    );
+  });
+}
+
+function buildAdminSummary() {
+  const catalog = extractRecipeCatalog();
+  const recipeFiles = listRecipeFiles();
+  const categoryCounts = countCategories(catalog);
+  const policyPages = [
+    { label: "About", path: "about.html" },
+    { label: "Contact", path: "contact.html" },
+    { label: "Privacy Policy", path: "privacy-policy.html" },
+    { label: "Terms", path: "terms.html" },
+  ].map((page) => ({
+    ...page,
+    exists: fs.existsSync(path.join(ROOT_DIR, page.path)),
+  }));
+  const seoAssets = [
+    { title: "robots.txt", path: "robots.txt", required: true },
+    { title: "sitemap.xml", path: "sitemap.xml", required: true },
+    { title: "ads.txt", path: "ads.txt", required: false },
+  ].map((asset) => {
+    const exists = fs.existsSync(path.join(ROOT_DIR, asset.path));
+    return {
+      state: exists ? "pass" : asset.required ? "fail" : "warn",
+      title: asset.title,
+      detail: exists
+        ? `${asset.path} is present.`
+        : asset.required
+          ? `${asset.path} is missing and should be deployed.`
+          : `${asset.path} should be added after AdSense gives you the real publisher ID.`,
+    };
+  });
+  const schema = collectSchemaStats(recipeFiles);
+  const ads = collectAdStats();
+  const environment = [
+    envCheck("OPENROUTER_API_KEY", "AI recipe generation API key"),
+    envCheck("R2_BUCKET_NAME", "Cloudflare R2 bucket"),
+    envCheck("R2_ENDPOINT", "Cloudflare R2 S3 endpoint"),
+    envCheck("R2_ACCESS_KEY_ID", "Cloudflare R2 access key"),
+    envCheck("R2_SECRET_ACCESS_KEY", "Cloudflare R2 secret key"),
+    envCheck("R2_PUBLIC_BASE_URL", "Public recipe image base URL"),
+    envCheck("SITE_URL", "Canonical production URL"),
+    envCheck("ADSENSE_PUBLISHER_ID", "AdSense publisher ID for ads.txt"),
+    envCheck("ADSENSE_AD_CLIENT", "AdSense client ID for ad tags"),
+  ];
+
+  const readiness = [
+    {
+      state: Object.keys(catalog).length >= 30 ? "pass" : "warn",
+      title: "Substantial recipe library",
+      detail: `${Object.keys(catalog).length} recipes are in the catalog. More original, useful content improves review quality.`,
+    },
+    {
+      state: policyPages.every((page) => page.exists) ? "pass" : "fail",
+      title: "Trust and policy pages",
+      detail: `${policyPages.filter((page) => page.exists).length}/${policyPages.length} required trust pages exist.`,
+    },
+    {
+      state: seoAssets.filter((asset) => asset.state === "fail").length ? "fail" : "pass",
+      title: "Crawler assets",
+      detail: "robots.txt and sitemap.xml help Google discover public content.",
+    },
+    {
+      state: schema.recipeJsonLdPages === recipeFiles.length && recipeFiles.length ? "pass" : "warn",
+      title: "Recipe structured data",
+      detail: `${schema.recipeJsonLdPages}/${recipeFiles.length} recipe pages include JSON-LD schema.`,
+    },
+    {
+      state: ads.hasDevPlaceholders ? "warn" : "pass",
+      title: "Ad placement presentation",
+      detail: ads.hasDevPlaceholders
+        ? "Development ad placeholder labels are still visible in CSS."
+        : "Ad containers use neutral labeling and avoid misleading callouts.",
+    },
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    recipes: {
+      total: Object.keys(catalog).length,
+      generatedPages: recipeFiles.length,
+      categories: categoryCounts,
+      recent: recipeFiles.slice(0, 8),
+    },
+    policyPages,
+    seoAssets,
+    ads,
+    schema,
+    environment,
+    readiness,
+  };
+}
+
+function buildRecipeEditorList() {
+  const catalog = extractRecipeCatalog();
+  return {
+    recipes: Object.entries(catalog)
+      .map(([slug, recipe]) => ({
+        slug,
+        ...recipe,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title)),
+  };
+}
+
+async function updateRecipe(slug, payload) {
+  assertSafeSlug(slug);
+  const source = fs.readFileSync(MAIN_JS_PATH, "utf8");
+  const catalog = extractRecipeCatalogFromSource(source);
+
+  if (!catalog[slug]) {
+    throw new Error(`Recipe not found: ${slug}`);
+  }
+
+  catalog[slug] = normalizeRecipePayload(payload, catalog[slug]);
+  writeCatalogToMainJs(source, catalog);
+  const generation = await runStaticGenerator();
+
+  return {
+    ok: true,
+    slug,
+    recipe: catalog[slug],
+    output: generation.output,
+  };
+}
+
+async function deleteRecipe(slug) {
+  assertSafeSlug(slug);
+  const source = fs.readFileSync(MAIN_JS_PATH, "utf8");
+  const catalog = extractRecipeCatalogFromSource(source);
+
+  if (!catalog[slug]) {
+    throw new Error(`Recipe not found: ${slug}`);
+  }
+
+  delete catalog[slug];
+  Object.values(catalog).forEach((recipe) => {
+    recipe.related = Array.isArray(recipe.related) ? recipe.related.filter((relatedSlug) => relatedSlug !== slug) : [];
+  });
+
+  writeCatalogToMainJs(source, catalog);
+  fs.rmSync(path.join(ROOT_DIR, "recipes", `${slug}.html`), { force: true });
+  const generation = await runStaticGenerator();
+
+  return {
+    ok: true,
+    slug,
+    output: generation.output,
+  };
+}
+
+function extractRecipeCatalog() {
+  const source = fs.readFileSync(MAIN_JS_PATH, "utf8");
+  return extractRecipeCatalogFromSource(source);
+}
+
+function extractRecipeCatalogFromSource(source) {
+  const declaration = "const recipeCatalog = ";
+  const declarationIndex = source.indexOf(declaration);
+
+  if (declarationIndex === -1) {
+    return {};
+  }
+
+  const objectStart = source.indexOf("{", declarationIndex);
+  let depth = 0;
+
+  for (let index = objectStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+
+    if (depth === 0) {
+      const objectLiteral = source.slice(objectStart, index + 1);
+      return vm.runInNewContext(`(${objectLiteral})`);
+    }
+  }
+
+  return {};
+}
+
+function findCatalogBounds(source) {
+  const declaration = "const recipeCatalog = ";
+  const declarationIndex = source.indexOf(declaration);
+  if (declarationIndex === -1) {
+    throw new Error("Could not find recipeCatalog in main.js.");
+  }
+
+  const objectStart = source.indexOf("{", declarationIndex);
+  let depth = 0;
+
+  for (let index = objectStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+
+    if (depth === 0) {
+      return { objectStart, objectEnd: index };
+    }
+  }
+
+  throw new Error("Could not find end of recipeCatalog in main.js.");
+}
+
+function writeCatalogToMainJs(source, catalog) {
+  const { objectStart, objectEnd } = findCatalogBounds(source);
+  const catalogSource = JSON.stringify(catalog, null, 4);
+  const updated = `${source.slice(0, objectStart)}${catalogSource}${source.slice(objectEnd + 1)}`;
+  fs.writeFileSync(MAIN_JS_PATH, updated);
+}
+
+function normalizeRecipePayload(payload, existingRecipe) {
+  const recipe = {
+    ...existingRecipe,
+    ...payload,
+    nutrition: {
+      ...existingRecipe.nutrition,
+      ...(payload.nutrition || {}),
+    },
+  };
+
+  recipe.category = cleanText(recipe.category, existingRecipe.category);
+  recipe.title = cleanText(recipe.title, existingRecipe.title);
+  recipe.description = cleanText(recipe.description, existingRecipe.description);
+  recipe.image = cleanText(recipe.image, existingRecipe.image);
+  recipe.alt = cleanText(recipe.alt, existingRecipe.alt || recipe.title);
+  recipe.prepTime = cleanText(recipe.prepTime, existingRecipe.prepTime || "15 min");
+  recipe.cookTime = cleanText(recipe.cookTime, existingRecipe.cookTime || "30 min");
+  recipe.servings = cleanText(recipe.servings, existingRecipe.servings || "4");
+  recipe.difficulty = cleanText(recipe.difficulty, existingRecipe.difficulty || "Easy");
+  recipe.ingredients = cleanList(recipe.ingredients, existingRecipe.ingredients);
+  recipe.instructions = cleanList(recipe.instructions, existingRecipe.instructions);
+  recipe.related = cleanList(recipe.related, existingRecipe.related).slice(0, 6);
+  recipe.nutrition = {
+    calories: cleanText(recipe.nutrition?.calories, existingRecipe.nutrition?.calories || "500"),
+    protein: cleanText(recipe.nutrition?.protein, existingRecipe.nutrition?.protein || "20g"),
+    carbs: cleanText(recipe.nutrition?.carbs, existingRecipe.nutrition?.carbs || "45g"),
+    fat: cleanText(recipe.nutrition?.fat, existingRecipe.nutrition?.fat || "20g"),
+  };
+
+  return recipe;
+}
+
+function cleanText(value, fallback) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return normalized || fallback || "";
+}
+
+function cleanList(value, fallback) {
+  const source = Array.isArray(value) ? value : String(value || "").split(/\r?\n/);
+  const cleaned = source.map((item) => String(item || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  return cleaned.length ? cleaned : Array.isArray(fallback) ? fallback : [];
+}
+
+function assertSafeSlug(slug) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    throw new Error("Invalid recipe slug.");
+  }
+}
+
+function countCategories(catalog) {
+  const counts = new Map();
+  Object.values(catalog).forEach((recipe) => {
+    const category = recipe.category || "Uncategorized";
+    counts.set(category, (counts.get(category) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function listRecipeFiles() {
+  const recipesDir = path.join(ROOT_DIR, "recipes");
+  if (!fs.existsSync(recipesDir)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(recipesDir)
+    .filter((file) => file.endsWith(".html"))
+    .map((file) => {
+      const filePath = path.join(recipesDir, file);
+      const html = fs.readFileSync(filePath, "utf8");
+      const stat = fs.statSync(filePath);
+      return {
+        path: `recipes/${file}`,
+        title: html.match(/<title>(.*?)<\/title>/i)?.[1]?.replace(/\s+\|\s+Modish Menu$/, "") || file,
+        modified: stat.mtime.toISOString().slice(0, 10),
+        mtime: stat.mtimeMs,
+        html,
+      };
+    })
+    .sort((a, b) => b.mtime - a.mtime)
+    .map(({ html, mtime, ...recipe }) => recipe);
+}
+
+function collectSchemaStats(recipeFiles) {
+  const detailedFiles = recipeFiles.map((recipe) => {
+    const html = fs.readFileSync(path.join(ROOT_DIR, recipe.path), "utf8");
+    return html;
+  });
+
+  return {
+    generatedRecipePages: recipeFiles.length,
+    recipeJsonLdPages: detailedFiles.filter((html) => /"@type":\s*"Recipe"/.test(html)).length,
+    canonicalPages: detailedFiles.filter((html) => /<link\s+rel="canonical"/i.test(html)).length,
+    openGraphPages: detailedFiles.filter((html) => /property="og:title"/i.test(html)).length,
+  };
+}
+
+function collectAdStats() {
+  const publicPages = ["index.html", "categories.html", "about.html", "recipe.html"].filter((file) =>
+    fs.existsSync(path.join(ROOT_DIR, file))
+  );
+  const totalSlots = publicPages.reduce((sum, file) => {
+    const html = fs.readFileSync(path.join(ROOT_DIR, file), "utf8");
+    return sum + (html.match(/class="[^"]*\bad-slot\b/g) || []).length;
+  }, 0);
+  const css = fs.existsSync(path.join(ROOT_DIR, "style.css"))
+    ? fs.readFileSync(path.join(ROOT_DIR, "style.css"), "utf8")
+    : "";
+
+  return {
+    totalSlots,
+    hasDevPlaceholders: /Ad Placeholder|Remove \.ad-slot dev styles/i.test(css),
+  };
+}
+
+function envCheck(name, title) {
+  const exists = Boolean(process.env[name]);
+  return {
+    state: exists ? "pass" : "warn",
+    title,
+    detail: exists ? `${name} is configured.` : `${name} is not set in .env.local.`,
+  };
 }
 
 function sanitizeFilename(value) {

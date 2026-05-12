@@ -216,29 +216,30 @@ button:hover,
 }
 
 /* SECTION: Ad Slots */
-/* Remove .ad-slot dev styles before going live */
 .ad-shell {
   padding: 1.25rem 0 0;
 }
 
 .ad-slot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: min(100%, 100%);
   margin: 0 auto;
-  padding: 1rem;
-  border: 2px dashed var(--blush);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 253, 248, 0.6);
-  color: rgba(47, 33, 25, 0.62);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 0.72rem;
+  text-align: center;
 }
 
-.ad-slot::before {
-  content: "Ad Placeholder";
+.ad-slot:empty,
+.ad-shell:has(.ad-slot:empty) {
+  display: none;
+}
+
+.ad-slot[data-ad-label]::before {
+  content: "Advertisement";
+  display: block;
+  margin-bottom: 0.5rem;
+  color: rgba(47, 33, 25, 0.52);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .ad-leaderboard {

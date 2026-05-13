@@ -15,7 +15,8 @@ const STATIC_GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-recipe-
 const PORT = Number(process.env.PORT || 3100);
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_KEYWORD_GUIDANCE_CHARS = 1200;
-const GENERATOR_TIMEOUT_MS = Number(process.env.GENERATOR_TIMEOUT_MS || 20 * 60 * 1000);
+const DEFAULT_GENERATOR_TIMEOUT_MS = 45 * 60 * 1000;
+const GENERATOR_TIMEOUT_MS = readPositiveIntegerEnv("GENERATOR_TIMEOUT_MS", DEFAULT_GENERATOR_TIMEOUT_MS);
 let generatorQueue = Promise.resolve();
 
 const MIME_TYPES = {
@@ -97,7 +98,7 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(tempPath, upload.buffer);
 
       try {
-        const result = await queueGenerator(tempPath, normalizeKeywordGuidance(upload.fields.keywordGuidance));
+        const result = await queueGenerator(tempPath, normalizeKeywordGuidance(upload.fields.keywordGuidance), res);
         sendJson(res, 200, result);
       } finally {
         fs.rmSync(tempPath, { force: true });
@@ -300,14 +301,16 @@ function normalizeKeywordGuidance(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, MAX_KEYWORD_GUIDANCE_CHARS);
 }
 
-function runGenerator(imagePath, keywordGuidance) {
+function runGenerator(imagePath, keywordGuidance, res) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const startedAt = Date.now();
     const args = [GENERATOR_SCRIPT, imagePath];
     if (keywordGuidance) {
       args.push("--keyword-guidance", keywordGuidance);
     }
 
-    execFile(
+    const child = execFile(
       process.execPath,
       args,
       {
@@ -316,9 +319,27 @@ function runGenerator(imagePath, keywordGuidance) {
         maxBuffer: 1024 * 1024 * 4,
       },
       (error, stdout, stderr) => {
+        settled = true;
         const combinedOutput = `${stdout || ""}${stderr ? `\n${stderr}` : ""}`.trim();
+        const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
 
         if (error) {
+          if (error.killed && error.signal === "SIGTERM") {
+            reject(
+              new Error(
+                [
+                  `Recipe generation timed out after ${Math.round(GENERATOR_TIMEOUT_MS / 60000)} minutes.`,
+                  "The provider was still cooling down, retrying, or regenerating pages.",
+                  "This item can be retried, or increase GENERATOR_TIMEOUT_MS in .env.local for larger batches.",
+                  combinedOutput,
+                ]
+                  .filter(Boolean)
+                  .join("\n")
+              )
+            );
+            return;
+          }
+
           reject(new Error(combinedOutput || error.message));
           return;
         }
@@ -334,17 +355,24 @@ function runGenerator(imagePath, keywordGuidance) {
           pagePath: pageMatch?.[1] || "",
           pageUrl: pageMatch ? `/${pageMatch[1].replace(/\\/g, "/")}` : "",
           uploadedImageUrl: uploadMatch?.[1] || "",
-          output: combinedOutput,
+          output: `${combinedOutput}\nElapsed: ${elapsedSeconds}s`,
         });
       }
     );
+
+    res.on("close", () => {
+      if (!settled) {
+        child.kill();
+        reject(new Error("Generation stopped by user."));
+      }
+    });
   });
 }
 
-function queueGenerator(imagePath, keywordGuidance) {
+function queueGenerator(imagePath, keywordGuidance, res) {
   const queuedRun = generatorQueue.then(
-    () => runGenerator(imagePath, keywordGuidance),
-    () => runGenerator(imagePath, keywordGuidance)
+    () => runGenerator(imagePath, keywordGuidance, res),
+    () => runGenerator(imagePath, keywordGuidance, res)
   );
 
   generatorQueue = queuedRun.catch(() => {});
@@ -718,4 +746,9 @@ function sanitizeFilename(value) {
     .slice(0, 60);
   const ext = parsed.ext.toLowerCase() || ".jpg";
   return `${name || "recipe-image"}${ext}`;
+}
+
+function readPositiveIntegerEnv(key, fallback) {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }

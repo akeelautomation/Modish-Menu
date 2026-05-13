@@ -17,6 +17,7 @@ const dropzone = document.querySelector(".dropzone");
 const previewWrap = document.querySelector("#previewWrap");
 const statusEl = document.querySelector("#status");
 const submitButton = document.querySelector("#submitButton");
+const stopButton = document.querySelector("#stopButton");
 const clearButton = document.querySelector("#clearButton");
 const summary = document.querySelector("#summary");
 const queueList = document.querySelector("#queueList");
@@ -31,14 +32,16 @@ const copyAdsTxtButton = document.querySelector("#copyAdsTxt");
 const adsenseSnippet = document.querySelector("#adsenseSnippet");
 
 const PROCESS_DELAY_MS = 5000;
-const FAILED_ITEM_RETRY_DELAY_MS = 30000;
-const MAX_ITEM_ATTEMPTS = 2;
+const FAILED_ITEM_RETRY_DELAY_MS = 5000;
+const MAX_ITEM_ATTEMPTS = 3;
 const KEYWORD_GUIDANCE_STORAGE_KEY = "modishMenu.keywordGuidance";
 const ADSENSE_SETTINGS_KEY = "modishMenu.adsenseSettings";
 
 let queuedFiles = [];
 let previewUrls = [];
 let isProcessing = false;
+let stopRequested = false;
+let activeControllers = new Set();
 let editableRecipes = [];
 let selectedRecipeSlug = "";
 
@@ -123,6 +126,8 @@ form.addEventListener("submit", async (event) => {
   }
 
   isProcessing = true;
+  stopRequested = false;
+  activeControllers.clear();
   const keywordGuidance = keywordGuidanceInput.value.trim();
   setLoading(true);
   summary.textContent = `Processing 0 of ${queuedFiles.length}. Each image runs one at a time.`;
@@ -132,6 +137,10 @@ form.addEventListener("submit", async (event) => {
   let failed = 0;
 
   for (let index = 0; index < queuedFiles.length; index += 1) {
+    if (stopRequested) {
+      break;
+    }
+
     const file = queuedFiles[index];
     const row = queueList.querySelector(`[data-index="${index}"]`);
 
@@ -143,6 +152,15 @@ form.addEventListener("submit", async (event) => {
 
     try {
       const result = await generateRecipeWithRetry(file, row, index, queuedFiles.length, keywordGuidance);
+      if (stopRequested) {
+        updateQueueRow(row, {
+          state: "error",
+          status: "Stopped",
+          error: "Stopped by user.",
+        });
+        break;
+      }
+
       completed += 1;
       updateQueueRow(row, {
         state: "success",
@@ -150,6 +168,16 @@ form.addEventListener("submit", async (event) => {
         result,
       });
     } catch (error) {
+      if (isAbortError(error)) {
+        updateQueueRow(row, {
+          state: "error",
+          status: "Stopped",
+          error: "Stopped by user.",
+        });
+        stopRequested = true;
+        break;
+      }
+
       failed += 1;
       updateQueueRow(row, {
         state: "error",
@@ -160,16 +188,31 @@ form.addEventListener("submit", async (event) => {
 
     summary.textContent = `Completed ${completed} of ${queuedFiles.length}. Failed ${failed}.`;
 
-    if (index < queuedFiles.length - 1) {
+    if (index < queuedFiles.length - 1 && !stopRequested) {
       setStatus("Moving to the next image. Backend pacing only slows down after provider errors.", "loading");
-      await sleep(PROCESS_DELAY_MS);
+      await sleepWithStop(PROCESS_DELAY_MS);
     }
   }
 
   isProcessing = false;
+  activeControllers.clear();
   setLoading(false);
-  setStatus(`Batch finished. ${completed} done, ${failed} failed.`, failed ? "error" : "success");
+  setStatus(
+    stopRequested ? `Batch stopped. ${completed} done, ${failed} failed.` : `Batch finished. ${completed} done, ${failed} failed.`,
+    failed || stopRequested ? "error" : "success"
+  );
   loadAudit();
+});
+
+stopButton.addEventListener("click", () => {
+  if (!isProcessing) {
+    return;
+  }
+
+  stopRequested = true;
+  stopButton.disabled = true;
+  setStatus("Stopping active request.", "error");
+  activeControllers.forEach((controller) => controller.abort());
 });
 
 clearButton.addEventListener("click", () => {
@@ -568,24 +611,35 @@ async function generateRecipe(file, keywordGuidance) {
   const formData = new FormData();
   formData.append("image", file);
   formData.append("keywordGuidance", keywordGuidance);
+  const controller = new AbortController();
+  activeControllers.add(controller);
 
-  const response = await fetch("/api/generate-recipe", {
-    method: "POST",
-    body: formData,
-  });
-  const data = await response.json();
+  try {
+    const response = await fetch("/api/generate-recipe", {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    const data = await response.json();
 
-  if (!response.ok) {
-    throw new Error(data.error || "Recipe generation failed.");
+    if (!response.ok) {
+      throw new Error(data.error || "Recipe generation failed.");
+    }
+
+    return data;
+  } finally {
+    activeControllers.delete(controller);
   }
-
-  return data;
 }
 
 async function generateRecipeWithRetry(file, row, index, total, keywordGuidance) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_ITEM_ATTEMPTS; attempt += 1) {
+    if (stopRequested) {
+      throw new DOMException("Stopped by user.", "AbortError");
+    }
+
     try {
       updateQueueRow(row, {
         state: "loading",
@@ -593,6 +647,10 @@ async function generateRecipeWithRetry(file, row, index, total, keywordGuidance)
       });
       return await generateRecipe(file, keywordGuidance);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
       lastError = error;
 
       if (attempt < MAX_ITEM_ATTEMPTS) {
@@ -600,7 +658,7 @@ async function generateRecipeWithRetry(file, row, index, total, keywordGuidance)
           state: "loading",
           status: `Retrying in ${Math.round(FAILED_ITEM_RETRY_DELAY_MS / 1000)}s`,
         });
-        await sleep(FAILED_ITEM_RETRY_DELAY_MS);
+        await sleepWithStop(FAILED_ITEM_RETRY_DELAY_MS);
       }
     }
   }
@@ -636,8 +694,53 @@ function updateQueueRow(row, { state, status, result, error }) {
   }
 
   if (error) {
+    links.hidden = false;
+    links.innerHTML = '<button class="copy retry-row" type="button">Retry</button>';
+    links.querySelector(".retry-row").addEventListener("click", () => retryRow(row));
     log.hidden = false;
     log.textContent = error;
+  }
+}
+
+async function retryRow(row) {
+  if (isProcessing) {
+    setStatus("Batch is running. Wait for it to finish before retrying a failed item.", "error");
+    return;
+  }
+
+  const index = Number(row?.dataset.index);
+  const file = queuedFiles[index];
+  if (!file) {
+    setStatus("Could not find the original file for this row.", "error");
+    return;
+  }
+
+  isProcessing = true;
+  stopRequested = false;
+  activeControllers.clear();
+  setLoading(true);
+  setStatus(`Retrying: ${file.name}`, "loading");
+
+  try {
+    const result = await generateRecipeWithRetry(file, row, index, queuedFiles.length, keywordGuidanceInput.value.trim());
+    updateQueueRow(row, {
+      state: "success",
+      status: "Done",
+      result,
+    });
+    setStatus("Retry finished.", "success");
+    await loadAudit();
+  } catch (error) {
+    updateQueueRow(row, {
+      state: "error",
+      status: isAbortError(error) ? "Stopped" : "Failed",
+      error: isAbortError(error) ? "Stopped by user." : error.message || "Recipe generation failed.",
+    });
+    setStatus(isAbortError(error) ? "Retry stopped." : "Retry failed.", "error");
+  } finally {
+    isProcessing = false;
+    activeControllers.clear();
+    setLoading(false);
   }
 }
 
@@ -691,6 +794,7 @@ function setLoading(isLoading) {
   submitButton.disabled = isLoading;
   clearButton.disabled = isLoading;
   keywordGuidanceInput.disabled = isLoading;
+  stopButton.disabled = !isLoading;
   submitButton.textContent = isLoading ? "Batch Running..." : "Start Batch";
 }
 
@@ -728,6 +832,24 @@ function getLines(selector) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sleepWithStop(ms) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const tick = () => {
+      if (stopRequested || Date.now() - startedAt >= ms) {
+        resolve();
+        return;
+      }
+      setTimeout(tick, 250);
+    };
+    tick();
+  });
+}
+
+function isAbortError(error) {
+  return error?.name === "AbortError";
 }
 
 function toSitePreviewUrl(value) {

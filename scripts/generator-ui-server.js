@@ -9,15 +9,38 @@ const ENV_PATH = path.join(ROOT_DIR, ".env.local");
 loadEnvFile(ENV_PATH);
 const ADMIN_DIR = path.join(ROOT_DIR, "admin");
 const MAIN_JS_PATH = path.join(ROOT_DIR, "main.js");
+const KITCHEN_PICKS_PATH = path.join(ROOT_DIR, "kitchen-picks.html");
+const KITCHEN_PICKS_DATA_PATH = path.join(ROOT_DIR, "data", "kitchen-picks.json");
 const TMP_DIR = path.join(ROOT_DIR, ".recipe-generator-tmp");
 const GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-from-image.js");
 const STATIC_GENERATOR_SCRIPT = path.join(ROOT_DIR, "scripts", "generate-recipe-pages.js");
 const PORT = Number(process.env.PORT || 3100);
+const SITE_URL = String(process.env.SITE_URL || "https://modish-menu.pages.dev").replace(/\/+$/, "");
+const OPENROUTER_API_URL = process.env.OPENROUTER_API_BASE_URL || "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash-lite";
+const OPENROUTER_REFERER = process.env.OPENROUTER_HTTP_REFERER || SITE_URL;
+const OPENROUTER_TITLE = "Modish Menu Product Publisher";
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_KEYWORD_GUIDANCE_CHARS = 1200;
 const DEFAULT_GENERATOR_TIMEOUT_MS = 45 * 60 * 1000;
 const GENERATOR_TIMEOUT_MS = readPositiveIntegerEnv("GENERATOR_TIMEOUT_MS", DEFAULT_GENERATOR_TIMEOUT_MS);
 let generatorQueue = Promise.resolve();
+
+const KITCHEN_PICK_SECTIONS = [
+  { id: "weeknight", title: "Weeknight Foundations" },
+  { id: "baking", title: "Baking Bench" },
+  { id: "hosting", title: "Table & Serve" },
+  { id: "coffee", title: "Coffee & Breakfast" },
+  { id: "pantry", title: "Pantry Order" },
+];
+
+const AFFILIATE_REVIEW_FIELDS = [
+  { key: "whoItsBestFor", label: "Who It's Best For", type: "text" },
+  { key: "whoShouldSkipIt", label: "Who Should Skip It", type: "text" },
+  { key: "whereItWorksBest", label: "Where It Works Best", type: "text" },
+  { key: "pros", label: "Pros", type: "list" },
+  { key: "cons", label: "Cons", type: "list" },
+];
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -73,6 +96,57 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && requestUrl.pathname === "/api/recipes") {
       sendJson(res, 200, buildRecipeEditorList());
       return;
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/kitchen-picks") {
+      sendJson(res, 200, buildKitchenPicksEditorList());
+      return;
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/affiliate-publisher/sections") {
+      sendJson(res, 200, { sections: getAffiliatePublisherSections() });
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/affiliate-publisher/analyze") {
+      const payload = await readJsonBody(req);
+      const analysis = await analyzeAffiliatePublisherInput(payload);
+      sendJson(res, 200, { analysis });
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/affiliate-publisher/publish") {
+      const payload = await readJsonBody(req);
+      const analysis = canReuseAffiliateAnalysis(payload, payload.analysis)
+        ? payload.analysis
+        : await analyzeAffiliatePublisherInput(payload);
+      const result = publishAffiliatePick(analysis);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/kitchen-picks") {
+      const payload = await readJsonBody(req);
+      const result = createKitchenPick(payload);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (requestUrl.pathname.startsWith("/api/kitchen-picks/")) {
+      const id = decodeURIComponent(requestUrl.pathname.replace(/^\/api\/kitchen-picks\//, ""));
+
+      if (req.method === "PUT") {
+        const payload = await readJsonBody(req);
+        const result = updateKitchenPick(id, payload);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === "DELETE") {
+        const result = deleteKitchenPick(id);
+        sendJson(res, 200, result);
+        return;
+      }
     }
 
     if (requestUrl.pathname.startsWith("/api/recipes/")) {
@@ -433,6 +507,7 @@ function buildAdminSummary() {
   });
   const schema = collectSchemaStats(recipeFiles);
   const ads = collectAdStats();
+  const kitchenPicks = collectKitchenPicksStats();
   const environment = [
     envCheck("OPENROUTER_API_KEY", "AI recipe generation API key"),
     envCheck("R2_BUCKET_NAME", "Cloudflare R2 bucket"),
@@ -487,6 +562,7 @@ function buildAdminSummary() {
     seoAssets,
     ads,
     schema,
+    kitchenPicks,
     environment,
     readiness,
   };
@@ -502,6 +578,908 @@ function buildRecipeEditorList() {
       }))
       .sort((a, b) => a.title.localeCompare(b.title)),
   };
+}
+
+function buildKitchenPicksEditorList() {
+  return readKitchenPicksData();
+}
+
+function getAffiliatePublisherSections() {
+  return KITCHEN_PICK_SECTIONS.map((section) => ({
+    id: section.id,
+    label: section.title,
+    pageFile: "kitchen-picks.html",
+    sectionUrl: `kitchen-picks.html#${section.id}`,
+  }));
+}
+
+async function analyzeAffiliatePublisherInput(input) {
+  const imageUrls = normalizeAffiliateImageUrls(input.imageUrls?.length ? input.imageUrls : input.imageUrl);
+  const affiliateUrl = cleanText(input.affiliateUrl, "");
+
+  if (!affiliateUrl || !imageUrls.length) {
+    throw new Error("Product link and at least one image URL are required.");
+  }
+
+  assertSafeExternalUrl(affiliateUrl, "Product link", false);
+  imageUrls.forEach((imageUrl) => assertSafeExternalUrl(imageUrl, "Image URL", false));
+
+  const sections = getAffiliatePublisherSections();
+  const sectionId = sections.some((section) => section.id === input.sectionId) ? input.sectionId : sections[0].id;
+  const sectionLabel = sections.find((section) => section.id === sectionId)?.label || "Kitchen Picks";
+  const resolvedProductUrl = await resolveProductUrl(affiliateUrl);
+  const amazonData = await readAmazonProductData(resolvedProductUrl);
+  const shortTitle = cleanText(input.shortTitle, amazonData.title || "Kitchen Pick");
+  const generatedReview = await generatePublisherReviewContent({
+    shortTitle,
+    brand: amazonData.brand,
+    fullTitle: amazonData.fullTitle || shortTitle,
+    bullets: amazonData.bullets,
+    price: amazonData.price,
+    sectionLabel,
+  });
+  const cardCopy = cleanText(input.cardCopy, generatedReview.cardCopy);
+  const pageSummary = cleanText(input.pageSummary, generatedReview.pageSummary);
+  const review = {
+    ...generatedReview,
+    cardCopy,
+    pageSummary,
+  };
+  const pageSlug = slugify(shortTitle) || slugify(amazonData.asin) || `kitchen-pick-${Date.now()}`;
+  const pageFile = `pick-${pageSlug}.html`;
+  const price = amazonData.price;
+
+  return {
+    affiliateUrl,
+    imageUrl: imageUrls[0],
+    imageUrls,
+    sectionId,
+    sectionLabel,
+    sectionPageFile: "kitchen-picks.html",
+    sectionUrl: `kitchen-picks.html#${sectionId}`,
+    asin: amazonData.asin,
+    brand: amazonData.brand,
+    fullTitle: amazonData.fullTitle || shortTitle,
+    shortTitle,
+    cardCopy,
+    pageSummary,
+    review,
+    price,
+    priceLabel: "Check Latest Price on Amazon",
+    availability: amazonData.availability,
+    pageFile,
+    productUrl: toPublicUrl(pageFile),
+    metaDescription: truncateText(`${shortTitle}. ${cardCopy}`, 158),
+    ogTitle: `${shortTitle} | Modish Menu`,
+    ogDescription: pageSummary,
+    twitterDescription: pageSummary,
+    altText: cleanText(input.altText, `${shortTitle} product photo`),
+  };
+}
+
+function canReuseAffiliateAnalysis(input, analysis) {
+  if (!analysis || typeof analysis !== "object" || !analysis.review) {
+    return false;
+  }
+
+  const inputImageUrls = normalizeAffiliateImageUrls(input.imageUrls?.length ? input.imageUrls : input.imageUrl);
+  const analysisImageUrls = normalizeAffiliateImageUrls(analysis.imageUrls?.length ? analysis.imageUrls : analysis.imageUrl);
+
+  return (
+    cleanText(input.affiliateUrl, "") === cleanText(analysis.affiliateUrl, "") &&
+    JSON.stringify(inputImageUrls) === JSON.stringify(analysisImageUrls) &&
+    optionalValueMatches(input.sectionId, analysis.sectionId) &&
+    optionalValueMatches(input.shortTitle, analysis.shortTitle) &&
+    optionalValueMatches(input.cardCopy, analysis.cardCopy) &&
+    optionalValueMatches(input.pageSummary, analysis.pageSummary) &&
+    optionalValueMatches(input.altText, analysis.altText)
+  );
+}
+
+function publishAffiliatePick(analysis) {
+  const pageFile = findExistingAffiliatePickFile(analysis);
+  const finalAnalysis = {
+    ...analysis,
+    pageFile,
+    productUrl: toPublicUrl(pageFile),
+  };
+
+  fs.writeFileSync(path.join(ROOT_DIR, pageFile), renderAffiliateProductPage(finalAnalysis), "utf8");
+
+  const data = readKitchenPicksData();
+  const existingIndex = data.picks.findIndex(
+    (pick) => pick.linkUrl === finalAnalysis.affiliateUrl || pick.title === finalAnalysis.shortTitle
+  );
+  const pick = {
+    id: slugify(finalAnalysis.shortTitle) || path.basename(pageFile, ".html").replace(/^pick-/, ""),
+    section: finalAnalysis.sectionId,
+    label: finalAnalysis.sectionLabel.replace(/\s+Foundations|\s+Bench|\s+Order/gi, "") || "Kitchen",
+    title: finalAnalysis.shortTitle,
+    description: finalAnalysis.cardCopy,
+    imageUrl: finalAnalysis.imageUrl,
+    imageAlt: finalAnalysis.altText,
+    linkUrl: finalAnalysis.affiliateUrl,
+    pageFile,
+    productUrl: finalAnalysis.productUrl,
+    buttonText: finalAnalysis.priceLabel,
+  };
+
+  if (existingIndex >= 0) {
+    data.picks[existingIndex] = { ...data.picks[existingIndex], ...pick };
+  } else {
+    data.picks.unshift(pick);
+  }
+
+  writeKitchenPicksData(data);
+  regenerateKitchenPicksPage(data);
+
+  return {
+    ok: true,
+    pageFile,
+    pagePath: path.join(ROOT_DIR, pageFile),
+    kitchenPicksPath: KITCHEN_PICKS_PATH,
+    analysis: finalAnalysis,
+  };
+}
+
+async function readAmazonProductData(affiliateUrl) {
+  const fallback = {
+    asin: extractAsinFromUrl(affiliateUrl),
+    brand: "",
+    title: titleFromUrl(affiliateUrl),
+    fullTitle: titleFromUrl(affiliateUrl),
+    bullets: [],
+    price: "",
+    availability: "InStock",
+  };
+
+  const asin = fallback.asin;
+  if (!asin) {
+    return fallback;
+  }
+
+  try {
+    const canonicalUrl = new URL(`/dp/${asin}`, new URL(affiliateUrl).origin).toString();
+    const response = await fetch(canonicalUrl, {
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133 Safari/537.36",
+        "accept-language": "en-US,en;q=0.9",
+      },
+    });
+
+    if (!response.ok) {
+      return fallback;
+    }
+
+    const html = await response.text();
+    const fullTitle = extractHtmlField(html, /<span id="productTitle"[^>]*>([\s\S]*?)<\/span>/i);
+    const brand = extractHtmlField(html, /<a id="bylineInfo"[^>]*>([\s\S]*?)<\/a>/i)
+      .replace(/^Visit the\s+/i, "")
+      .replace(/\s+Store$/i, "");
+
+    return {
+      asin,
+      brand,
+      title: fullTitle || fallback.title,
+      fullTitle: fullTitle || fallback.fullTitle,
+      bullets: extractAmazonBullets(html),
+      price: extractAmazonPrice(html),
+      availability: /currently unavailable|out of stock/i.test(html) ? "OutOfStock" : "InStock",
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+async function resolveProductUrl(productUrl) {
+  try {
+    const response = await fetch(productUrl, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133 Safari/537.36",
+        "accept-language": "en-US,en;q=0.9",
+      },
+    });
+    const location = response.headers.get("location") || response.url || productUrl;
+    return new URL(location, productUrl).toString();
+  } catch (_error) {
+    return productUrl;
+  }
+}
+
+async function generatePublisherReviewContent({ shortTitle, brand, fullTitle, bullets, price, sectionLabel }) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is missing. Add it to .env.local, then restart the admin server.");
+  }
+
+  const fallbackDetail = bullets.find((bullet) => bullet.length > 20) || `${shortTitle} for ${sectionLabel}.`;
+  const promptPayload = {
+    shortTitle,
+    brand,
+    fullTitle,
+    section: sectionLabel,
+    price: price ? `$${price}` : "Not available",
+    productFeatures: bullets,
+  };
+
+  const systemPrompt =
+    "You write product recommendation copy for a food and recipe website. Rewrite product information into grounded buying guidance for home cooks. Do not copy product listing wording. Do not mention Amazon. Do not invent exact dimensions, materials, accessories, or performance claims that are not supported by the provided details. If information is limited, be honest and tell the reader to check the listing details. Return valid JSON only.";
+
+  const userPrompt = [
+    "Create structured product notes using this schema:",
+    "{",
+    '  "cardCopy": "1-2 concise sentences for a product card, 100-165 characters if possible",',
+    '  "pageSummary": "1 sentence product page subtitle, kitchen-use focused, 170 characters or less",',
+    '  "whoItsBestFor": "1-2 sentences",',
+    '  "whoShouldSkipIt": "1-2 sentences",',
+    '  "whereItWorksBest": "1-2 sentences",',
+    '  "pros": ["3 concise items"],',
+    '  "cons": ["1-2 concise items"]',
+    "}",
+    "Rules:",
+    "- Keep the tone practical, specific, and honest.",
+    "- Rephrase ideas instead of echoing supplied features.",
+    "- Pros and cons must be concise plain-text list items.",
+    "- Keep pros to exactly 3 items and cons to 1-2 items.",
+    "- Keep every field compact. Avoid long paragraphs.",
+    "",
+    JSON.stringify(promptPayload, null, 2),
+  ].join("\n");
+
+  const models = [OPENROUTER_MODEL]
+    .concat(String(process.env.OPENROUTER_FALLBACK_MODELS || "").split(","))
+    .map((model) => model.trim())
+    .filter(Boolean);
+  let lastError = null;
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch(OPENROUTER_API_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": OPENROUTER_REFERER,
+            "X-Title": OPENROUTER_TITLE,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: attempt === 0 ? 0.2 : 0.1,
+            max_completion_tokens: attempt === 0 ? 1200 : 1500,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            ...(attempt === 0 ? { response_format: { type: "json_object" } } : {}),
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await readOpenRouterError(response));
+        }
+
+        const payload = await response.json();
+        const messageText = extractOpenRouterMessageText(payload?.choices?.[0]?.message?.content);
+        return normalizePublisherReview(parsePublisherReviewResponse(messageText));
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (process.env.OPENROUTER_ALLOW_REVIEW_FALLBACK === "1") {
+    return {
+      cardCopy: truncateText(fallbackDetail, 165),
+      pageSummary: `${shortTitle} is selected for cooks comparing practical kitchen pieces for everyday use.`,
+      whoItsBestFor: `${shortTitle} is best for readers browsing ${sectionLabel.toLowerCase()} who want a practical kitchen upgrade.`,
+      whoShouldSkipIt: "Skip it if you need exact sizing, material, or compatibility details that are not visible from the product listing.",
+      whereItWorksBest: `${shortTitle} fits best in a home kitchen where the item has a clear role in prep, storage, serving, or everyday cooking.`,
+      pros: [truncateText(fallbackDetail, 120), "Useful for comparing before buying.", "Fits naturally into the Kitchen Picks page."],
+      cons: ["Price, availability, and listing details can change."],
+    };
+  }
+
+  throw new Error(`AI review generation failed: ${lastError?.message || "unexpected OpenRouter response"}`);
+}
+
+function renderAffiliateProductPage(data) {
+  const productJson = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: data.fullTitle,
+    image: data.imageUrls,
+    description: data.metaDescription,
+    sku: data.asin || data.pageFile,
+    brand: data.brand ? { "@type": "Brand", name: data.brand } : undefined,
+    offers: {
+      "@type": "Offer",
+      url: data.affiliateUrl,
+      itemCondition: "https://schema.org/NewCondition",
+      availability: `https://schema.org/${data.availability || "InStock"}`,
+    },
+  };
+
+  if (data.price) {
+    productJson.offers.priceCurrency = "USD";
+    productJson.offers.price = data.price;
+  }
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta name="description" content="${escapeHtml(data.metaDescription)}" />
+    <meta property="og:type" content="product" />
+    <meta property="og:site_name" content="Modish Menu" />
+    <meta property="og:url" content="${escapeHtml(data.productUrl)}" />
+    <meta property="og:title" content="${escapeHtml(data.ogTitle)}" />
+    <meta property="og:description" content="${escapeHtml(data.ogDescription)}" />
+    <meta property="og:image" content="${escapeHtml(data.imageUrl)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(data.ogTitle)}" />
+    <meta name="twitter:description" content="${escapeHtml(data.twitterDescription)}" />
+    <meta name="twitter:image" content="${escapeHtml(data.imageUrl)}" />
+    <script type="application/ld+json">${JSON.stringify(productJson).replace(/<\/script/gi, "<\\/script")}</script>
+    <title>${escapeHtml(data.shortTitle)} | Modish Menu</title>
+    <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <div class="container nav-wrap">
+          <a class="brand" href="index.html">Modish Menu</a>
+          <nav class="site-nav" aria-label="Primary">
+            <a class="nav-link" href="index.html">Home</a>
+            <a class="nav-link" href="recipes.html">Recipes</a>
+            <a class="nav-link is-current" href="kitchen-picks.html">Kitchen Picks</a>
+          </nav>
+        </div>
+      </header>
+      <main>
+        <section class="picks-hero">
+          <div class="container">
+            <div class="picks-hero-grid">
+              <div class="picks-hero-copy">
+                <span class="eyebrow">Kitchen Pick</span>
+                <h1 class="section-heading">${escapeHtml(data.shortTitle)}</h1>
+                <p class="section-copy">${escapeHtml(data.pageSummary)}</p>
+                <div class="picks-disclosure">
+                  <span>Note</span>
+                  Some outbound shopping links may earn Modish Menu a commission at no extra cost to you.
+                </div>
+                <a class="button button-dark" href="${escapeHtml(data.affiliateUrl)}" target="_blank" rel="noopener noreferrer nofollow sponsored">${escapeHtml(data.priceLabel)}</a>
+              </div>
+              <img class="picks-hero-image" src="${escapeHtml(data.imageUrl)}" alt="${escapeHtml(data.altText)}" />
+            </div>
+          </div>
+        </section>
+        <section class="pick-zone">
+          <div class="container">
+            <div class="pick-grid pick-grid-compact">
+${renderAffiliateReviewMarkup(data.review)}
+            </div>
+            <p class="section-copy">Pricing and availability can change. Check the product page for the latest details before buying.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
+`;
+}
+
+function renderAffiliateReviewMarkup(review) {
+  return AFFILIATE_REVIEW_FIELDS.map((field) => {
+    const value = review[field.key];
+    const body = field.type === "list"
+      ? `<ul>${(value || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      : `<p>${escapeHtml(value || "")}</p>`;
+    return `              <article class="product-pick-card">
+                <div class="product-pick-body">
+                  <span class="tag">Product Notes</span>
+                  <h3>${escapeHtml(field.label)}</h3>
+                  ${body}
+                </div>
+              </article>`;
+  }).join("\n");
+}
+
+function findExistingAffiliatePickFile(analysis) {
+  const candidates = fs
+    .readdirSync(ROOT_DIR)
+    .filter((file) => /^pick-.*\.html$/i.test(file));
+
+  for (const file of candidates) {
+    const html = fs.readFileSync(path.join(ROOT_DIR, file), "utf8");
+    if ((analysis.asin && html.includes(analysis.asin)) || html.includes(analysis.affiliateUrl) || file === analysis.pageFile) {
+      return file;
+    }
+  }
+
+  return analysis.pageFile;
+}
+
+function normalizeAffiliateImageUrls(input) {
+  const values = Array.isArray(input) ? input : [input];
+  const cleaned = [];
+
+  values.forEach((value) => {
+    String(value || "")
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((url) => {
+        if (!cleaned.includes(url)) {
+          cleaned.push(url);
+        }
+      });
+  });
+
+  return cleaned;
+}
+
+function optionalValueMatches(inputValue, analysisValue) {
+  const normalized = String(inputValue || "").trim();
+  return !normalized || normalized === String(analysisValue || "").trim();
+}
+
+function extractAsinFromUrl(value) {
+  try {
+    const url = new URL(value);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const dpIndex = parts.findIndex((part) => part.toLowerCase() === "dp");
+    const productIndex = parts.findIndex((part) => part.toLowerCase() === "product");
+    return cleanText(dpIndex >= 0 ? parts[dpIndex + 1] : productIndex >= 0 ? parts[productIndex + 1] : "", "").toUpperCase();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function titleFromUrl(value) {
+  try {
+    const url = new URL(value);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const titlePart = parts.find((part) => !["dp", "gp", "product"].includes(part.toLowerCase()) && !/^[A-Z0-9]{10}$/i.test(part));
+    return titlePart
+      ? titlePart.replace(/[-_]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+      : "Kitchen Pick";
+  } catch (_error) {
+    return "Kitchen Pick";
+  }
+}
+
+function extractHtmlField(html, pattern) {
+  const match = html.match(pattern);
+  return cleanText(match?.[1] || "", "");
+}
+
+function extractAmazonBullets(html) {
+  const section = html.match(/<div id="feature-bullets"[\s\S]*?<ul[\s\S]*?<\/ul>/i)?.[0] || "";
+  return Array.from(section.matchAll(/<li[^>]*>\s*<span class="a-list-item">([\s\S]*?)<\/span>\s*<\/li>/gi))
+    .map((match) => cleanText(match[1], ""))
+    .filter((item) => item.length > 20)
+    .slice(0, 4);
+}
+
+function extractAmazonPrice(html) {
+  const patterns = [
+    /<span class="a-offscreen">\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
+    /"displayPrice"\s*:\s*"\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)"/i,
+    /"priceAmount"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]{1,2})?)"?/i,
+  ];
+
+  for (const pattern of patterns) {
+    const value = html.match(pattern)?.[1]?.replace(/,/g, "");
+    if (value) {
+      return Number(value).toFixed(2);
+    }
+  }
+
+  return "";
+}
+
+async function readOpenRouterError(response) {
+  const raw = await response.text();
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.error?.message || parsed?.message || raw;
+  } catch (_error) {
+    return raw || `OpenRouter returned ${response.status}`;
+  }
+}
+
+function extractOpenRouterMessageText(content) {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && typeof part.text === "string") return part.text;
+        return "";
+      })
+      .join("\n")
+      .trim();
+  }
+
+  return content && typeof content === "object" ? JSON.stringify(content) : "";
+}
+
+function parsePublisherReviewResponse(text) {
+  const source = String(text || "").trim();
+  const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() || source;
+  const start = fenced.indexOf("{");
+
+  if (start < 0) {
+    throw new Error("The AI response did not contain JSON.");
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < fenced.length; index += 1) {
+    const char = fenced[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return JSON.parse(fenced.slice(start, index + 1));
+      }
+    }
+  }
+
+  throw new Error("The AI response contained incomplete JSON.");
+}
+
+function normalizePublisherReview(rawReview) {
+  const review = {
+    cardCopy: truncateText(cleanText(rawReview?.cardCopy, ""), 165),
+    pageSummary: truncateText(cleanText(rawReview?.pageSummary, ""), 170),
+    whoItsBestFor: cleanText(rawReview?.whoItsBestFor, ""),
+    whoShouldSkipIt: cleanText(rawReview?.whoShouldSkipIt, ""),
+    whereItWorksBest: cleanText(rawReview?.whereItWorksBest, ""),
+    pros: cleanGeneratedList(rawReview?.pros, 3, 3),
+    cons: cleanGeneratedList(rawReview?.cons, 1, 2),
+  };
+
+  const missing = AFFILIATE_REVIEW_FIELDS.filter((field) => {
+    const value = review[field.key];
+    return field.type === "list" ? !value.length : !value;
+  }).map((field) => field.label);
+
+  if (!review.cardCopy) missing.push("cardCopy");
+  if (!review.pageSummary) missing.push("pageSummary");
+
+  if (missing.length) {
+    throw new Error(`The AI response was missing: ${missing.join(", ")}.`);
+  }
+
+  return review;
+}
+
+function cleanGeneratedList(values, minimum, maximum) {
+  const source = Array.isArray(values)
+    ? values
+    : String(values || "")
+        .split(/\r?\n|[;\u2022]/)
+        .map((item) => item.trim());
+  const cleaned = [];
+
+  source.forEach((item) => {
+    const normalized = cleanText(String(item || "").replace(/^[\-*\d.)\s]+/, ""), "");
+    if (normalized && !cleaned.includes(normalized) && cleaned.length < maximum) {
+      cleaned.push(normalized);
+    }
+  });
+
+  if (cleaned.length < minimum) {
+    throw new Error(`Expected at least ${minimum} list items from the AI response.`);
+  }
+
+  return cleaned;
+}
+
+function truncateText(value, maxLength) {
+  const text = cleanText(value, "");
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1).replace(/\s+\S*$/, "")}...`;
+}
+
+function toPublicUrl(fileName) {
+  const normalized = String(fileName || "").replace(/^\/+/, "");
+  return `${SITE_URL}/${normalized}`;
+}
+
+function createKitchenPick(payload) {
+  const data = readKitchenPicksData();
+  const pick = normalizeKitchenPickPayload(payload);
+  const baseId = slugify(pick.title) || "kitchen-pick";
+  let id = baseId;
+  let suffix = 2;
+
+  while (data.picks.some((item) => item.id === id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  pick.id = id;
+  data.picks.push(pick);
+  writeKitchenPicksData(data);
+  regenerateKitchenPicksPage(data);
+
+  return {
+    ok: true,
+    pick,
+    kitchenPicks: data,
+  };
+}
+
+function updateKitchenPick(id, payload) {
+  assertSafeKitchenPickId(id);
+  const data = readKitchenPicksData();
+  const index = data.picks.findIndex((pick) => pick.id === id);
+
+  if (index === -1) {
+    throw new Error(`Kitchen pick not found: ${id}`);
+  }
+
+  data.picks[index] = normalizeKitchenPickPayload(payload, data.picks[index]);
+  data.picks[index].id = id;
+  writeKitchenPicksData(data);
+  regenerateKitchenPicksPage(data);
+
+  return {
+    ok: true,
+    pick: data.picks[index],
+    kitchenPicks: data,
+  };
+}
+
+function deleteKitchenPick(id) {
+  assertSafeKitchenPickId(id);
+  const data = readKitchenPicksData();
+  const nextPicks = data.picks.filter((pick) => pick.id !== id);
+
+  if (nextPicks.length === data.picks.length) {
+    throw new Error(`Kitchen pick not found: ${id}`);
+  }
+
+  data.picks = nextPicks;
+  writeKitchenPicksData(data);
+  regenerateKitchenPicksPage(data);
+
+  return {
+    ok: true,
+    id,
+    kitchenPicks: data,
+  };
+}
+
+function readKitchenPicksData() {
+  let data = { sections: KITCHEN_PICK_SECTIONS, picks: [] };
+
+  if (fs.existsSync(KITCHEN_PICKS_DATA_PATH)) {
+    data = JSON.parse(fs.readFileSync(KITCHEN_PICKS_DATA_PATH, "utf8"));
+  }
+
+  const sectionIds = new Set(KITCHEN_PICK_SECTIONS.map((section) => section.id));
+  const picks = Array.isArray(data.picks)
+    ? data.picks.map((pick) => normalizeKitchenPickPayload(pick, pick)).filter((pick) => sectionIds.has(pick.section))
+    : [];
+
+  return {
+    sections: KITCHEN_PICK_SECTIONS,
+    picks,
+  };
+}
+
+function writeKitchenPicksData(data) {
+  fs.mkdirSync(path.dirname(KITCHEN_PICKS_DATA_PATH), { recursive: true });
+  fs.writeFileSync(
+    KITCHEN_PICKS_DATA_PATH,
+    `${JSON.stringify({ sections: KITCHEN_PICK_SECTIONS, picks: data.picks }, null, 2)}\n`
+  );
+}
+
+function normalizeKitchenPickPayload(payload, existingPick = {}) {
+  const sectionIds = new Set(KITCHEN_PICK_SECTIONS.map((section) => section.id));
+  const section = sectionIds.has(payload.section) ? payload.section : existingPick.section || KITCHEN_PICK_SECTIONS[0].id;
+  const title = cleanText(payload.title, existingPick.title || "Untitled Pick");
+  const label = cleanText(payload.label, existingPick.label || "Kitchen");
+  const description = cleanText(payload.description, existingPick.description || "A useful pick for the home kitchen.");
+  const imageUrl = cleanText(payload.imageUrl, existingPick.imageUrl || "");
+  const imageAlt = cleanText(payload.imageAlt, existingPick.imageAlt || title);
+  const linkUrl = cleanText(payload.linkUrl, existingPick.linkUrl || "");
+  const inferredPageFile = inferKitchenPickPageFile(existingPick.id || payload.id || slugify(title));
+  const pageFile = cleanText(payload.pageFile, existingPick.pageFile || inferredPageFile);
+  const productUrl = cleanText(payload.productUrl, existingPick.productUrl || (pageFile ? toPublicUrl(pageFile) : ""));
+  const buttonText = cleanText(payload.buttonText, existingPick.buttonText || "See Options");
+  const id = existingPick.id || cleanText(payload.id, "");
+
+  assertSafeExternalUrl(imageUrl, "Image URL", true);
+  assertSafeExternalUrl(linkUrl, "Shopping link", false);
+  if (productUrl) {
+    assertSafeExternalUrl(productUrl, "Product URL", false);
+  }
+
+  return {
+    id,
+    section,
+    label,
+    title,
+    description,
+    imageUrl,
+    imageAlt,
+    linkUrl,
+    pageFile,
+    productUrl,
+    buttonText,
+  };
+}
+
+function inferKitchenPickPageFile(id) {
+  const safeId = String(id || "").trim();
+  if (!safeId) {
+    return "";
+  }
+
+  const pageFile = `pick-${safeId}.html`;
+  return fs.existsSync(path.join(ROOT_DIR, pageFile)) ? pageFile : "";
+}
+
+function regenerateKitchenPicksPage(data = readKitchenPicksData()) {
+  if (!fs.existsSync(KITCHEN_PICKS_PATH)) {
+    throw new Error("kitchen-picks.html is missing.");
+  }
+
+  let html = fs.readFileSync(KITCHEN_PICKS_PATH, "utf8");
+
+  KITCHEN_PICK_SECTIONS.forEach((section) => {
+    const picks = data.picks.filter((pick) => pick.section === section.id);
+    html = replacePickGrid(html, section.id, picks.map(renderKitchenPickCard).join("\n"));
+  });
+
+  html = updateKitchenPicksJsonLd(html, data.picks);
+  fs.writeFileSync(KITCHEN_PICKS_PATH, html);
+}
+
+function replacePickGrid(html, sectionId, cardsHtml) {
+  const sectionStart = html.indexOf(`<section class="pick-zone" id="${sectionId}">`);
+  if (sectionStart === -1) {
+    throw new Error(`Could not find Kitchen Picks section: ${sectionId}`);
+  }
+
+  const gridStart = html.indexOf('<div class="pick-grid', sectionStart);
+  if (gridStart === -1) {
+    throw new Error(`Could not find product grid for section: ${sectionId}`);
+  }
+
+  const gridOpenEnd = html.indexOf(">", gridStart) + 1;
+  const gridClose = findMatchingClosingDiv(html, gridStart);
+  const replacement = cardsHtml ? `\n${cardsHtml}\n            ` : "\n            ";
+
+  return `${html.slice(0, gridOpenEnd)}${replacement}${html.slice(gridClose.start)}`;
+}
+
+function findMatchingClosingDiv(html, divStart) {
+  const tagPattern = /<\/?div\b[^>]*>/gi;
+  tagPattern.lastIndex = divStart;
+  let depth = 0;
+  let match;
+
+  while ((match = tagPattern.exec(html))) {
+    if (match[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          start: match.index,
+          end: tagPattern.lastIndex,
+        };
+      }
+      continue;
+    }
+
+    depth += 1;
+  }
+
+  throw new Error("Could not find the end of a Kitchen Picks product grid.");
+}
+
+function renderKitchenPickCard(pick) {
+  const detailsLink = pick.pageFile
+    ? `<a class="button button-secondary" href="${escapeHtml(pick.pageFile)}">Details</a>`
+    : "";
+
+  return `              <article class="product-pick-card">
+                <img
+                  src="${escapeHtml(pick.imageUrl)}"
+                  alt="${escapeHtml(pick.imageAlt)}"
+                />
+                <div class="product-pick-body">
+                  <span class="tag">${escapeHtml(pick.label)}</span>
+                  <h3>${escapeHtml(pick.title)}</h3>
+                  <p>${escapeHtml(pick.description)}</p>
+                  ${detailsLink}
+                  <a
+                    class="button button-secondary"
+                    href="${escapeHtml(pick.linkUrl)}"
+                    target="_blank"
+                    rel="noopener noreferrer nofollow sponsored"
+                  >${escapeHtml(pick.buttonText)}</a>
+                </div>
+              </article>`;
+}
+
+function updateKitchenPicksJsonLd(html, picks) {
+  const itemListElement = picks.map((pick, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: pick.title,
+    url: pick.productUrl || pick.linkUrl,
+  }));
+  const json = JSON.stringify(itemListElement, null, 10).replace(/\n/g, "\n        ");
+
+  return html.replace(/"itemListElement":\s*\[[\s\S]*?\]\s*(?=\n\s*})/, `"itemListElement": ${json}`);
+}
+
+function assertSafeKitchenPickId(id) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+    throw new Error("Invalid Kitchen Picks item ID.");
+  }
+}
+
+function assertSafeExternalUrl(value, label, allowRelative) {
+  if (allowRelative && value.startsWith("/")) {
+    return;
+  }
+
+  let url;
+  try {
+    url = new URL(value);
+  } catch (_error) {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`${label} must use http or https.`);
+  }
 }
 
 async function updateRecipe(slug, payload) {
@@ -653,6 +1631,25 @@ function cleanList(value, fallback) {
   return cleaned.length ? cleaned : Array.isArray(fallback) ? fallback : [];
 }
 
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 70);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function assertSafeSlug(slug) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
     throw new Error("Invalid recipe slug.");
@@ -725,6 +1722,62 @@ function collectAdStats() {
   return {
     totalSlots,
     hasDevPlaceholders: /Ad Placeholder|Remove \.ad-slot dev styles/i.test(css),
+  };
+}
+
+function collectKitchenPicksStats() {
+  const pagePath = path.join(ROOT_DIR, "kitchen-picks.html");
+  const homepagePath = path.join(ROOT_DIR, "index.html");
+  const sitemapPath = path.join(ROOT_DIR, "sitemap.xml");
+  const pageHtml = fs.existsSync(pagePath) ? fs.readFileSync(pagePath, "utf8") : "";
+  const homepageHtml = fs.existsSync(homepagePath) ? fs.readFileSync(homepagePath, "utf8") : "";
+  const sitemapXml = fs.existsSync(sitemapPath) ? fs.readFileSync(sitemapPath, "utf8") : "";
+  const productCards = (pageHtml.match(/class="[^"]*\bproduct-pick-card\b/g) || []).length;
+  const outboundLinks = (pageHtml.match(/class="button button-secondary"[\s\S]*?target="_blank"/g) || []).length;
+  const sponsoredLinks = (pageHtml.match(/class="button button-secondary"[\s\S]*?rel="[^"]*\bsponsored\b[^"]*"/g) || []).length;
+  const hasDisclosure = /commission at no extra cost to you/i.test(pageHtml);
+  const hasHomepageEntry = /class="[^"]*\bhome-pick-card\b/.test(homepageHtml);
+  const hasSitemapEntry = /kitchen-picks\.html/.test(sitemapXml);
+
+  return {
+    exists: Boolean(pageHtml),
+    productCards,
+    outboundLinks,
+    sponsoredLinks,
+    checks: [
+      {
+        state: pageHtml ? "pass" : "fail",
+        title: "Kitchen Picks page",
+        detail: pageHtml ? "kitchen-picks.html exists." : "kitchen-picks.html is missing.",
+      },
+      {
+        state: productCards >= 6 ? "pass" : productCards ? "warn" : "fail",
+        title: "Pick card inventory",
+        detail: `${productCards} product-style cards are currently published.`,
+      },
+      {
+        state: hasDisclosure ? "pass" : "warn",
+        title: "Commission disclosure",
+        detail: hasDisclosure
+          ? "The page includes reader-facing commission language."
+          : "Add a discreet commission note near the top of the page.",
+      },
+      {
+        state: outboundLinks === sponsoredLinks ? "pass" : "warn",
+        title: "Sponsored link attributes",
+        detail: `${sponsoredLinks}/${outboundLinks} outbound shopping links include sponsored rel attributes.`,
+      },
+      {
+        state: hasHomepageEntry ? "pass" : "warn",
+        title: "Homepage entry",
+        detail: hasHomepageEntry ? "Homepage Kitchen Picks cards are present." : "Add a homepage entry section.",
+      },
+      {
+        state: hasSitemapEntry ? "pass" : "warn",
+        title: "Sitemap entry",
+        detail: hasSitemapEntry ? "kitchen-picks.html is listed in sitemap.xml." : "Add kitchen-picks.html to sitemap.xml.",
+      },
+    ],
   };
 }
 

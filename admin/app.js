@@ -9,6 +9,16 @@ const recipeEditorForm = document.querySelector("#recipeEditorForm");
 const deleteRecipeButton = document.querySelector("#deleteRecipeButton");
 const openRecipeButton = document.querySelector("#openRecipeButton");
 const recipeEditorStatus = document.querySelector("#recipeEditorStatus");
+const kitchenPickSelect = document.querySelector("#kitchenPickSelect");
+const kitchenPickForm = document.querySelector("#kitchenPickForm");
+const kitchenPickSectionInput = document.querySelector("#kitchenPickSection");
+const kitchenPickImageUrlInput = document.querySelector("#kitchenPickImageUrl");
+const kitchenPickImagePreview = document.querySelector("#kitchenPickImagePreview");
+const saveKitchenPickButton = document.querySelector("#saveKitchenPickButton");
+const newKitchenPickButton = document.querySelector("#newKitchenPickButton");
+const deleteKitchenPickButton = document.querySelector("#deleteKitchenPickButton");
+const kitchenPickEditorStatus = document.querySelector("#kitchenPickEditorStatus");
+const kitchenPickList = document.querySelector("#kitchenPickList");
 
 const form = document.querySelector("#uploadForm");
 const imageInput = document.querySelector("#imageInput");
@@ -44,6 +54,8 @@ let stopRequested = false;
 let activeControllers = new Set();
 let editableRecipes = [];
 let selectedRecipeSlug = "";
+let kitchenPickData = { sections: [], picks: [] };
+let selectedKitchenPickId = "";
 
 navItems.forEach((item) => {
   item.addEventListener("click", () => {
@@ -58,6 +70,11 @@ regenerateButton?.addEventListener("click", regenerateStaticPages);
 recipeSelect?.addEventListener("change", () => selectRecipe(recipeSelect.value));
 recipeEditorForm?.addEventListener("submit", saveSelectedRecipe);
 deleteRecipeButton?.addEventListener("click", deleteSelectedRecipe);
+kitchenPickSelect?.addEventListener("change", () => selectKitchenPick(kitchenPickSelect.value));
+kitchenPickForm?.addEventListener("submit", saveKitchenPick);
+newKitchenPickButton?.addEventListener("click", () => selectKitchenPick(""));
+deleteKitchenPickButton?.addEventListener("click", deleteKitchenPick);
+kitchenPickImageUrlInput?.addEventListener("input", renderKitchenPickImagePreview);
 
 keywordGuidanceInput.value = localStorage.getItem(KEYWORD_GUIDANCE_STORAGE_KEY) || "";
 keywordGuidanceInput.addEventListener("input", () => {
@@ -232,6 +249,7 @@ clearButton.addEventListener("click", () => {
 renderAdsenseSnippet();
 loadAudit();
 loadRecipes();
+loadKitchenPicks();
 
 async function loadAudit() {
   refreshAuditButton.disabled = true;
@@ -259,6 +277,8 @@ function renderAudit(audit) {
   setText("#categoryCount", audit.recipes.categories.length);
   setText("#policyScore", `${audit.policyPages.filter((page) => page.exists).length}/${audit.policyPages.length}`);
   setText("#adSlotCount", audit.ads.totalSlots);
+  setText("#kitchenPickCount", audit.kitchenPicks.productCards);
+  setText("#kitchenPickStatus", audit.kitchenPicks.exists ? "Public page is present" : "Page file is missing");
 
   renderReadiness(audit.readiness);
   renderCategoryBars(audit.recipes.categories);
@@ -266,6 +286,7 @@ function renderAudit(audit) {
   renderSeoAssets(audit.seoAssets);
   renderSchemaSummary(audit.schema);
   renderEnvironmentList(audit.environment);
+  renderKitchenPicks(audit.kitchenPicks);
 }
 
 async function loadRecipes(preferredSlug = selectedRecipeSlug) {
@@ -422,6 +443,180 @@ function readRecipeEditorForm() {
   };
 }
 
+async function loadKitchenPicks(preferredId = selectedKitchenPickId) {
+  if (!kitchenPickSelect) return;
+
+  kitchenPickSelect.disabled = true;
+
+  try {
+    const response = await fetch("/api/kitchen-picks");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to load Kitchen Picks.");
+    }
+
+    kitchenPickData = data;
+    renderKitchenPickEditor(data, preferredId);
+    renderKitchenPickList(data.picks);
+  } catch (error) {
+    setKitchenPickStatus(error.message || "Unable to load Kitchen Picks.", "error");
+  } finally {
+    kitchenPickSelect.disabled = false;
+  }
+}
+
+function renderKitchenPickEditor(data, preferredId = "") {
+  kitchenPickSectionInput.textContent = "";
+  data.sections.forEach((section) => {
+    const option = document.createElement("option");
+    option.value = section.id;
+    option.textContent = section.title;
+    kitchenPickSectionInput.appendChild(option);
+  });
+
+  kitchenPickSelect.textContent = "";
+  const newOption = document.createElement("option");
+  newOption.value = "";
+  newOption.textContent = "Add new pick";
+  kitchenPickSelect.appendChild(newOption);
+
+  data.picks.forEach((pick) => {
+    const section = data.sections.find((item) => item.id === pick.section);
+    const option = document.createElement("option");
+    option.value = pick.id;
+    option.textContent = `${pick.title} (${section?.title || pick.section})`;
+    kitchenPickSelect.appendChild(option);
+  });
+
+  const nextId = data.picks.some((pick) => pick.id === preferredId) ? preferredId : "";
+  kitchenPickSelect.value = nextId;
+  selectKitchenPick(nextId);
+}
+
+function renderKitchenPickList(picks) {
+  if (!kitchenPickList) return;
+
+  kitchenPickList.textContent = "";
+
+  if (!picks.length) {
+    kitchenPickList.appendChild(createTextItem("No Kitchen Picks yet.", "Use the product editor to add the first item."));
+    return;
+  }
+
+  picks.forEach((pick) => {
+    const section = kitchenPickData.sections.find((item) => item.id === pick.section);
+    const item = document.createElement("button");
+    item.className = "pick-admin-row";
+    item.type = "button";
+    item.innerHTML = `
+      <img src="${escapeHtml(pick.imageUrl)}" alt="">
+      <span>
+        <strong>${escapeHtml(pick.title)}</strong>
+        <small>${escapeHtml(section?.title || pick.section)} - ${escapeHtml(pick.label)}</small>
+      </span>
+    `;
+    item.addEventListener("click", () => {
+      kitchenPickSelect.value = pick.id;
+      selectKitchenPick(pick.id);
+    });
+    kitchenPickList.appendChild(item);
+  });
+}
+
+function selectKitchenPick(id) {
+  selectedKitchenPickId = id;
+  const pick = kitchenPickData.picks.find((item) => item.id === id);
+  const defaultSection = kitchenPickData.sections[0]?.id || "weeknight";
+
+  setValue("#kitchenPickSection", pick?.section || defaultSection);
+  setValue("#kitchenPickLabel", pick?.label || "");
+  setValue("#kitchenPickTitle", pick?.title || "");
+  setValue("#kitchenPickButtonText", pick?.buttonText || "See Options");
+  setValue("#kitchenPickDescription", pick?.description || "");
+  setValue("#kitchenPickImageUrl", pick?.imageUrl || "");
+  setValue("#kitchenPickImageAlt", pick?.imageAlt || "");
+  setValue("#kitchenPickLinkUrl", pick?.linkUrl || "");
+
+  deleteKitchenPickButton.disabled = !id;
+  saveKitchenPickButton.textContent = id ? "Save Pick" : "Add Pick";
+  renderKitchenPickImagePreview();
+  setKitchenPickStatus("", "");
+}
+
+async function saveKitchenPick(event) {
+  event.preventDefault();
+
+  setKitchenPickLoading(true);
+  setKitchenPickStatus(selectedKitchenPickId ? "Saving pick..." : "Adding pick...", "loading");
+
+  try {
+    const url = selectedKitchenPickId
+      ? `/api/kitchen-picks/${encodeURIComponent(selectedKitchenPickId)}`
+      : "/api/kitchen-picks";
+    const response = await fetch(url, {
+      method: selectedKitchenPickId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readKitchenPickForm()),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Kitchen Pick save failed.");
+    }
+
+    selectedKitchenPickId = data.pick.id;
+    await loadKitchenPicks(selectedKitchenPickId);
+    setKitchenPickStatus("Saved. The public Kitchen Picks page was updated.", "success");
+    await loadAudit();
+  } catch (error) {
+    setKitchenPickStatus(error.message || "Kitchen Pick save failed.", "error");
+  } finally {
+    setKitchenPickLoading(false);
+  }
+}
+
+async function deleteKitchenPick() {
+  if (!selectedKitchenPickId) return;
+
+  const pick = kitchenPickData.picks.find((item) => item.id === selectedKitchenPickId);
+  const confirmed = window.confirm(`Delete "${pick?.title || selectedKitchenPickId}" from Kitchen Picks?`);
+  if (!confirmed) return;
+
+  setKitchenPickLoading(true);
+  setKitchenPickStatus("Deleting pick...", "loading");
+
+  try {
+    const response = await fetch(`/api/kitchen-picks/${encodeURIComponent(selectedKitchenPickId)}`, {
+      method: "DELETE",
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Kitchen Pick delete failed.");
+    }
+
+    selectedKitchenPickId = "";
+    await loadKitchenPicks();
+    setKitchenPickStatus("Deleted. The public Kitchen Picks page was updated.", "success");
+    await loadAudit();
+  } catch (error) {
+    setKitchenPickStatus(error.message || "Kitchen Pick delete failed.", "error");
+  } finally {
+    setKitchenPickLoading(false);
+  }
+}
+
+function readKitchenPickForm() {
+  return {
+    section: getValue("#kitchenPickSection"),
+    label: getValue("#kitchenPickLabel"),
+    title: getValue("#kitchenPickTitle"),
+    description: getValue("#kitchenPickDescription"),
+    imageUrl: getValue("#kitchenPickImageUrl"),
+    imageAlt: getValue("#kitchenPickImageAlt"),
+    linkUrl: getValue("#kitchenPickLinkUrl"),
+    buttonText: getValue("#kitchenPickButtonText"),
+  };
+}
+
 function renderReadiness(items) {
   const list = document.querySelector("#readinessList");
   const badge = document.querySelector("#readinessBadge");
@@ -499,6 +694,20 @@ function renderEnvironmentList(items) {
   const list = document.querySelector("#environmentList");
   list.textContent = "";
   items.forEach((item) => list.appendChild(createCheckItem(item)));
+}
+
+function renderKitchenPicks(kitchenPicks) {
+  const list = document.querySelector("#kitchenPicksChecklist");
+  const badge = document.querySelector("#kitchenPicksBadge");
+  if (!list || !badge) return;
+
+  list.textContent = "";
+  kitchenPicks.checks.forEach((item) => list.appendChild(createCheckItem(item)));
+
+  const failures = kitchenPicks.checks.filter((item) => item.state === "fail").length;
+  const warnings = kitchenPicks.checks.filter((item) => item.state === "warn").length;
+  badge.className = `badge ${failures ? "warn" : "good"}`;
+  badge.textContent = failures ? `${failures} blockers` : warnings ? `${warnings} warnings` : "Ready";
 }
 
 function createCheckItem(item) {
@@ -790,6 +999,11 @@ function setRecipeEditorStatus(message, state) {
   recipeEditorStatus.dataset.state = state;
 }
 
+function setKitchenPickStatus(message, state) {
+  kitchenPickEditorStatus.textContent = message;
+  kitchenPickEditorStatus.dataset.state = state;
+}
+
 function setLoading(isLoading) {
   submitButton.disabled = isLoading;
   clearButton.disabled = isLoading;
@@ -803,6 +1017,21 @@ function setRecipeEditorLoading(isLoading) {
   recipeEditorForm.querySelectorAll("input, textarea, button").forEach((element) => {
     element.disabled = isLoading;
   });
+}
+
+function setKitchenPickLoading(isLoading) {
+  kitchenPickSelect.disabled = isLoading;
+  kitchenPickForm.querySelectorAll("input, textarea, select, button").forEach((element) => {
+    element.disabled = isLoading;
+  });
+  deleteKitchenPickButton.disabled = isLoading || !selectedKitchenPickId;
+}
+
+function renderKitchenPickImagePreview() {
+  const url = kitchenPickImageUrlInput.value.trim();
+  kitchenPickImagePreview.src = url || "";
+  kitchenPickImagePreview.alt = url ? "Selected product preview" : "";
+  kitchenPickImagePreview.parentElement.dataset.empty = url ? "false" : "true";
 }
 
 function setText(selector, value) {

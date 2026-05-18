@@ -62,7 +62,10 @@ button,
 .related-card,
 .footer-social,
 .policy-card,
-.category-grid-card {
+.category-grid-card,
+.picks-nav-card,
+.product-pick-card,
+.home-pick-card {
   transition:
     transform var(--transition),
     box-shadow var(--transition),
@@ -93,7 +96,10 @@ button:hover,
 .sidebar-card:hover,
 .related-card:hover,
 .policy-card:hover,
-.category-grid-card:hover {
+.category-grid-card:hover,
+.picks-nav-card:hover,
+.product-pick-card:hover,
+.home-pick-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-strong);
 }
@@ -320,6 +326,21 @@ button:hover,
   background: var(--warm-cream);
 }
 
+.product-pick-body .button-secondary[target="_blank"],
+.picks-hero-copy .button-dark[target="_blank"] {
+  color: var(--white);
+  background: var(--terracotta);
+  box-shadow: 0 16px 34px rgba(184, 100, 67, 0.3);
+}
+
+.product-pick-body .button-secondary[target="_blank"]:hover,
+.product-pick-body .button-secondary[target="_blank"]:focus-visible,
+.picks-hero-copy .button-dark[target="_blank"]:hover,
+.picks-hero-copy .button-dark[target="_blank"]:focus-visible {
+  color: var(--white);
+  background: var(--espresso);
+}
+
 .button-dark {
   color: var(--white);
   background: rgba(255, 253, 248, 0.12);
@@ -539,6 +560,229 @@ button:hover,
   gap: 0.4rem;
   font-weight: 600;
   color: var(--terracotta-deep);
+}
+
+/* SECTION: Kitchen Picks */
+.picks-hero {
+  padding: 3rem 0 2rem;
+}
+
+.picks-hero-grid {
+  display: grid;
+  gap: 1.5rem;
+  align-items: stretch;
+  padding: 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(184, 100, 67, 0.14);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 8% 12%, rgba(184, 100, 67, 0.18), transparent 20rem),
+    radial-gradient(circle at 90% 92%, rgba(133, 145, 125, 0.22), transparent 22rem),
+    linear-gradient(135deg, rgba(255, 253, 248, 0.92), rgba(239, 226, 210, 0.86));
+  box-shadow: var(--shadow-strong);
+}
+
+.picks-hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.picks-hero-copy .section-heading {
+  max-width: 11ch;
+}
+
+.picks-hero-image {
+  min-height: 320px;
+  height: 100%;
+  border-radius: 28px;
+  object-fit: cover;
+  box-shadow: 0 22px 48px rgba(47, 33, 25, 0.16);
+}
+
+.picks-disclosure {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  max-width: 44rem;
+  margin-top: 1.3rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(47, 33, 25, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 253, 248, 0.72);
+  color: rgba(47, 33, 25, 0.72);
+  font-size: 0.95rem;
+}
+
+.picks-disclosure span {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--terracotta-deep);
+}
+
+.picks-nav {
+  display: grid;
+  gap: 1rem;
+}
+
+.picks-nav-card {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 154px;
+  padding: 1.25rem;
+  border: 1px solid rgba(47, 33, 25, 0.08);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(184, 100, 67, 0.1), transparent 10rem),
+    rgba(255, 253, 248, 0.84);
+  box-shadow: var(--shadow-soft);
+}
+
+.picks-nav-card span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--terracotta);
+}
+
+.picks-nav-card strong {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.picks-nav-card em {
+  color: rgba(47, 33, 25, 0.68);
+  font-style: normal;
+}
+
+.pick-zone {
+  padding: 2.5rem 0;
+}
+
+.pick-zone-head {
+  margin-bottom: 1.4rem;
+}
+
+.pick-grid {
+  display: grid;
+  gap: 1.4rem;
+}
+
+.product-pick-card {
+  overflow: hidden;
+  border: 1px solid rgba(47, 33, 25, 0.08);
+  border-radius: var(--radius-md);
+  background: rgba(255, 253, 248, 0.88);
+  box-shadow: var(--shadow-soft);
+}
+
+.product-pick-card img {
+  height: 260px;
+  object-fit: cover;
+  background: var(--warm-cream);
+}
+
+.product-pick-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 1.35rem;
+}
+
+.product-pick-body h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.product-pick-body p {
+  margin: 0;
+  color: rgba(47, 33, 25, 0.72);
+}
+
+.home-picks {
+  padding: 4rem 0;
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0), rgba(255, 253, 248, 0.34)),
+    radial-gradient(circle at 92% 14%, rgba(133, 145, 125, 0.16), transparent 20rem);
+}
+
+.home-picks-head {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+}
+
+.home-pick-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.home-pick-card {
+  min-height: 238px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  position: relative;
+  padding: 1.2rem;
+  isolation: isolate;
+  border-radius: var(--radius-md);
+  color: var(--white);
+  background: var(--espresso);
+  box-shadow: var(--shadow-soft);
+}
+
+.home-pick-card::before,
+.home-pick-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.home-pick-card::before {
+  background: var(--pick-image) center/cover no-repeat;
+  transition: transform var(--transition);
+}
+
+.home-pick-card::after {
+  background: linear-gradient(180deg, rgba(47, 33, 25, 0.04), rgba(47, 33, 25, 0.82));
+}
+
+.home-pick-card:hover::before {
+  transform: scale(1.05);
+}
+
+.home-pick-card span {
+  width: fit-content;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.18);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.home-pick-card h3 {
+  margin: 0.75rem 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.home-pick-card p {
+  margin: 0;
+  color: rgba(255, 253, 248, 0.82);
 }
 
 /* SECTION: Recipe Page */
@@ -890,6 +1134,32 @@ button:hover,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .picks-hero-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+    padding: 1.3rem;
+  }
+
+  .picks-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pick-grid:not(.pick-grid-compact) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-picks-head {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .home-pick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .recipe-hero-shell {
     grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1fr);
     gap: clamp(2rem, 5vw, 4.5rem);
@@ -935,6 +1205,10 @@ button:hover,
 
   .category-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .picks-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .recipe-hero-shell {

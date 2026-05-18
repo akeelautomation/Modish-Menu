@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Modish Menu Admin Dashboard</title>
     <meta name="robots" content="noindex, nofollow" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23231f20'/%3E%3Ctext x='32' y='39' font-size='22' text-anchor='middle' fill='%23fffdf8' font-family='Georgia'%3EMM%3C/text%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
@@ -22,6 +26,7 @@
           <button class="nav-item is-active" type="button" data-panel-target="overview">Overview</button>
           <button class="nav-item" type="button" data-panel-target="recipe-maker">AI Recipe Maker</button>
           <button class="nav-item" type="button" data-panel-target="content">Content</button>
+          <button class="nav-item" type="button" data-panel-target="kitchen-picks">Kitchen Picks</button>
           <button class="nav-item" type="button" data-panel-target="adsense">AdSense</button>
           <button class="nav-item" type="button" data-panel-target="seo">SEO</button>
           <button class="nav-item" type="button" data-panel-target="settings">Settings</button>
@@ -72,6 +77,11 @@
               <span class="label">Ad Slots</span>
               <strong id="adSlotCount">--</strong>
               <small>Content-separated placements</small>
+            </article>
+            <article class="metric-card">
+              <span class="label">Kitchen Picks</span>
+              <strong id="kitchenPickCount">--</strong>
+              <small id="kitchenPickStatus">Publisher page loading</small>
             </article>
           </div>
 
@@ -265,6 +275,7 @@
               <div class="button-grid">
                 <button id="regenerateButton" class="button dark" type="button">Regenerate Static Recipe Pages</button>
                 <a class="button ghost" href="/site/recipes.html" target="_blank" rel="noreferrer">Open Recipe Directory</a>
+                <a class="button ghost" href="/site/kitchen-picks.html" target="_blank" rel="noreferrer">Open Kitchen Picks</a>
                 <a class="button ghost" href="/site/contact.html" target="_blank" rel="noreferrer">Open Contact Page</a>
               </div>
               <pre id="actionLog" class="log" hidden></pre>
@@ -278,6 +289,52 @@
                 </div>
               </div>
               <div id="recentRecipes" class="file-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="kitchen-picks" class="panel" data-panel="kitchen-picks">
+          <div class="dashboard-grid">
+            <article class="card publisher-frame-card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Publisher</span>
+                  <h2>Product Publisher</h2>
+                </div>
+              </div>
+              <iframe
+                class="publisher-frame"
+                title="Product Publisher"
+                src="/admin/affiliate-publisher.html"
+              ></iframe>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Publisher Page</span>
+                  <h2>Kitchen Picks</h2>
+                </div>
+                <span id="kitchenPicksBadge" class="badge">Audit pending</span>
+              </div>
+              <p class="muted">
+                Manage products here, then use the preview links to review the public page and homepage placement.
+              </p>
+              <div class="button-grid">
+                <a class="button dark" href="/site/kitchen-picks.html" target="_blank" rel="noreferrer">Preview Kitchen Picks</a>
+                <a class="button ghost" href="/site/index.html" target="_blank" rel="noreferrer">Preview Homepage</a>
+                <a class="button ghost" href="/site/sitemap.xml" target="_blank" rel="noreferrer">Open Sitemap</a>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <span class="label">Audit</span>
+                  <h2>Publishing Checks</h2>
+                </div>
+              </div>
+              <div id="kitchenPicksChecklist" class="checklist"></div>
             </article>
           </div>
         </section>

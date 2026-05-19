@@ -797,6 +797,7 @@ async function generatePublisherReviewContent({ shortTitle, brand, fullTitle, bu
   }
 
   const fallbackDetail = bullets.find((bullet) => bullet.length > 20) || `${shortTitle} for ${sectionLabel}.`;
+  const fallbackReview = buildPublisherReviewFallback({ shortTitle, sectionLabel, fallbackDetail });
   const promptPayload = {
     shortTitle,
     brand,
@@ -864,7 +865,7 @@ async function generatePublisherReviewContent({ shortTitle, brand, fullTitle, bu
         }
 
         const payload = await response.json();
-        const messageText = extractOpenRouterMessageText(payload?.choices?.[0]?.message?.content);
+        const messageText = extractOpenRouterMessageText(payload?.choices?.[0]?.message?.content || payload?.choices?.[0]?.text);
         return normalizePublisherReview(parsePublisherReviewResponse(messageText));
       } catch (error) {
         lastError = error;
@@ -872,19 +873,11 @@ async function generatePublisherReviewContent({ shortTitle, brand, fullTitle, bu
     }
   }
 
-  if (process.env.OPENROUTER_ALLOW_REVIEW_FALLBACK === "1") {
-    return {
-      cardCopy: truncateText(fallbackDetail, 165),
-      pageSummary: `${shortTitle} is selected for cooks comparing practical kitchen pieces for everyday use.`,
-      whoItsBestFor: `${shortTitle} is best for readers browsing ${sectionLabel.toLowerCase()} who want a practical kitchen upgrade.`,
-      whoShouldSkipIt: "Skip it if you need exact sizing, material, or compatibility details that are not visible from the product listing.",
-      whereItWorksBest: `${shortTitle} fits best in a home kitchen where the item has a clear role in prep, storage, serving, or everyday cooking.`,
-      pros: [truncateText(fallbackDetail, 120), "Useful for comparing before buying.", "Fits naturally into the Kitchen Picks page."],
-      cons: ["Price, availability, and listing details can change."],
-    };
+  if (process.env.OPENROUTER_STRICT_REVIEW_JSON === "1") {
+    throw new Error(`AI review generation failed: ${lastError?.message || "unexpected OpenRouter response"}`);
   }
 
-  throw new Error(`AI review generation failed: ${lastError?.message || "unexpected OpenRouter response"}`);
+  return fallbackReview;
 }
 
 function renderAffiliateProductPage(data) {
@@ -1105,14 +1098,39 @@ function extractOpenRouterMessageText(content) {
     return content
       .map((part) => {
         if (typeof part === "string") return part;
-        if (part?.type === "text" && typeof part.text === "string") return part.text;
+        if (typeof part?.text === "string") return part.text;
+        if (typeof part?.content === "string") return part.content;
+        if (typeof part?.output_text === "string") return part.output_text;
         return "";
       })
       .join("\n")
       .trim();
   }
 
-  return content && typeof content === "object" ? JSON.stringify(content) : "";
+  if (content && typeof content === "object") {
+    if (typeof content.text === "string") return content.text;
+    if (typeof content.content === "string") return content.content;
+    if (typeof content.output_text === "string") return content.output_text;
+    return JSON.stringify(content);
+  }
+
+  return "";
+}
+
+function buildPublisherReviewFallback({ shortTitle, sectionLabel, fallbackDetail }) {
+  return {
+    cardCopy: truncateText(fallbackDetail, 165),
+    pageSummary: `${shortTitle} is selected for cooks comparing practical kitchen pieces for everyday use.`,
+    whoItsBestFor: `${shortTitle} is best for readers browsing ${sectionLabel.toLowerCase()} who want a practical kitchen upgrade.`,
+    whoShouldSkipIt: "Skip it if you need exact sizing, material, or compatibility details that are not visible from the product listing.",
+    whereItWorksBest: `${shortTitle} fits best in a home kitchen where the item has a clear role in prep, storage, serving, or everyday cooking.`,
+    pros: [
+      truncateText(fallbackDetail, 120),
+      "Useful for comparing before buying.",
+      "Fits naturally into the Kitchen Picks page.",
+    ],
+    cons: ["Price, availability, and listing details can change."],
+  };
 }
 
 function parsePublisherReviewResponse(text) {

@@ -610,7 +610,10 @@ async function analyzeAffiliatePublisherInput(input) {
   const sectionLabel = sections.find((section) => section.id === sectionId)?.label || "Kitchen Picks";
   const resolvedProductUrl = await resolveProductUrl(affiliateUrl);
   const amazonData = await readAmazonProductData(resolvedProductUrl);
-  const shortTitle = cleanText(input.shortTitle, amazonData.title || "Kitchen Pick");
+  const shortTitle = cleanText(
+    input.shortTitle,
+    shortenProductTitle(amazonData.title || amazonData.fullTitle || "Kitchen Pick")
+  );
   const price = normalizePublisherPrice(input.price || amazonData.price);
   if (!price) {
     throw new Error("Pinterest Product Rich Pins require a price. Enter the current product price in the Pinterest price field, then preview again.");
@@ -908,8 +911,7 @@ function renderAffiliateProductPage(data) {
     "@context": "https://schema.org",
     "@type": "Product",
     name: data.fullTitle,
-    url: data.productUrl,
-    image: data.imageUrls,
+    image: (data.imageUrls || [imageUrl]).filter(Boolean),
     description: data.metaDescription,
     sku: data.asin || data.pageFile,
     brand: productBrand ? { "@type": "Brand", name: productBrand } : undefined,
@@ -921,6 +923,7 @@ function renderAffiliateProductPage(data) {
       priceCurrency: currency,
       price,
     },
+    url: data.productUrl,
   };
 
   return `<!doctype html>
@@ -1088,6 +1091,25 @@ function titleFromUrl(value) {
   } catch (_error) {
     return "Kitchen Pick";
   }
+}
+
+function shortenProductTitle(value) {
+  const title = cleanText(value, "Kitchen Pick")
+    .replace(/\s*\|.*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const firstClause = title.split(/\s*,\s*/)[0]?.trim() || title;
+  if (firstClause.length >= 18 && firstClause.length <= 64) {
+    return firstClause;
+  }
+  const words = title.split(/\s+/);
+  const kept = [];
+  for (const word of words) {
+    const candidate = [...kept, word].join(" ");
+    if (candidate.length > 58) break;
+    kept.push(word);
+  }
+  return kept.join(" ") || title.slice(0, 58).trim() || "Kitchen Pick";
 }
 
 function extractHtmlField(html, pattern) {

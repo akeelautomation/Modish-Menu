@@ -610,12 +610,18 @@ async function analyzeAffiliatePublisherInput(input) {
   const resolvedProductUrl = await resolveProductUrl(affiliateUrl);
   const amazonData = await readAmazonProductData(resolvedProductUrl);
   const shortTitle = cleanText(input.shortTitle, amazonData.title || "Kitchen Pick");
+  const price = normalizePublisherPrice(input.price || amazonData.price);
+  if (!price) {
+    throw new Error("Pinterest Product Rich Pins require a price. Enter the current product price in the Pinterest price field, then preview again.");
+  }
+
+  const availability = normalizePinterestAvailability(input.availability || amazonData.availability);
   const generatedReview = await generatePublisherReviewContent({
     shortTitle,
     brand: amazonData.brand,
     fullTitle: amazonData.fullTitle || shortTitle,
     bullets: amazonData.bullets,
-    price: amazonData.price,
+    price,
     sectionLabel,
   });
   const cardCopy = cleanText(input.cardCopy, generatedReview.cardCopy);
@@ -627,7 +633,6 @@ async function analyzeAffiliatePublisherInput(input) {
   };
   const pageSlug = slugify(shortTitle) || slugify(amazonData.asin) || `kitchen-pick-${Date.now()}`;
   const pageFile = `pick-${pageSlug}.html`;
-  const price = amazonData.price;
 
   return {
     affiliateUrl,
@@ -645,8 +650,10 @@ async function analyzeAffiliatePublisherInput(input) {
     pageSummary,
     review,
     price,
+    currency: "USD",
     priceLabel: "Check Latest Price on Amazon",
-    availability: amazonData.availability,
+    availability,
+    availabilityLabel: pinterestAvailabilityLabel(availability),
     pageFile,
     productUrl: toPublicUrl(pageFile),
     metaDescription: truncateText(`${shortTitle}. ${cardCopy}`, 158),
@@ -658,7 +665,7 @@ async function analyzeAffiliatePublisherInput(input) {
 }
 
 function canReuseAffiliateAnalysis(input, analysis) {
-  if (!analysis || typeof analysis !== "object" || !analysis.review) {
+  if (!analysis || typeof analysis !== "object" || !analysis.review || !normalizePublisherPrice(analysis.price)) {
     return false;
   }
 
@@ -669,6 +676,8 @@ function canReuseAffiliateAnalysis(input, analysis) {
     cleanText(input.affiliateUrl, "") === cleanText(analysis.affiliateUrl, "") &&
     JSON.stringify(inputImageUrls) === JSON.stringify(analysisImageUrls) &&
     optionalValueMatches(input.sectionId, analysis.sectionId) &&
+    optionalValueMatches(input.price, analysis.price) &&
+    optionalValueMatches(input.availability, analysis.availability) &&
     optionalValueMatches(input.shortTitle, analysis.shortTitle) &&
     optionalValueMatches(input.cardCopy, analysis.cardCopy) &&
     optionalValueMatches(input.pageSummary, analysis.pageSummary) &&
@@ -765,7 +774,7 @@ async function readAmazonProductData(affiliateUrl) {
       fullTitle: fullTitle || fallback.fullTitle,
       bullets: extractAmazonBullets(html),
       price: extractAmazonPrice(html),
-      availability: /currently unavailable|out of stock/i.test(html) ? "OutOfStock" : "InStock",
+      availability: extractAmazonAvailability(html),
     };
   } catch (_error) {
     return fallback;
@@ -881,10 +890,25 @@ async function generatePublisherReviewContent({ shortTitle, brand, fullTitle, bu
 }
 
 function renderAffiliateProductPage(data) {
+  const price = normalizePublisherPrice(data.price);
+  if (!price) {
+    throw new Error("Cannot render a Pinterest product page without a price.");
+  }
+
+  const currency = cleanText(data.currency, "USD").toUpperCase();
+  const availability = normalizePinterestAvailability(data.availability);
+  const pinterestAvailability = pinterestAvailabilityLabel(availability);
+  const brandMeta = data.brand ? `    <meta property="og:brand" content="${escapeHtml(data.brand)}" />\n` : "";
+  const productImagesMeta = (data.imageUrls || [data.imageUrl])
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((imageUrl) => `    <meta property="og:image" content="${escapeHtml(imageUrl)}" />`)
+    .join("\n");
   const productJson = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: data.fullTitle,
+    url: data.productUrl,
     image: data.imageUrls,
     description: data.metaDescription,
     sku: data.asin || data.pageFile,
@@ -893,14 +917,11 @@ function renderAffiliateProductPage(data) {
       "@type": "Offer",
       url: data.affiliateUrl,
       itemCondition: "https://schema.org/NewCondition",
-      availability: `https://schema.org/${data.availability || "InStock"}`,
+      availability: `https://schema.org/${availability}`,
+      priceCurrency: currency,
+      price,
     },
   };
-
-  if (data.price) {
-    productJson.offers.priceCurrency = "USD";
-    productJson.offers.price = data.price;
-  }
 
   return `<!doctype html>
 <html lang="en">
@@ -914,7 +935,11 @@ function renderAffiliateProductPage(data) {
     <meta property="og:url" content="${escapeHtml(data.productUrl)}" />
     <meta property="og:title" content="${escapeHtml(data.ogTitle)}" />
     <meta property="og:description" content="${escapeHtml(data.ogDescription)}" />
-    <meta property="og:image" content="${escapeHtml(data.imageUrl)}" />
+${productImagesMeta}
+    <meta property="product:price:amount" content="${escapeHtml(price)}" />
+    <meta property="product:price:currency" content="${escapeHtml(currency)}" />
+    <meta property="og:availability" content="${escapeHtml(pinterestAvailability)}" />
+${brandMeta}    <meta property="og:availability:destinations" content="US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escapeHtml(data.ogTitle)}" />
     <meta name="twitter:description" content="${escapeHtml(data.twitterDescription)}" />
@@ -925,6 +950,19 @@ function renderAffiliateProductPage(data) {
     <link rel="stylesheet" href="style.css?v=20260519-product-images" />
   </head>
   <body class="product-page">
+    <div hidden itemscope itemtype="https://schema.org/Product">
+      <meta itemprop="name" content="${escapeHtml(data.fullTitle)}" />
+      <meta itemprop="url" content="${escapeHtml(data.productUrl)}" />
+      ${(data.imageUrls || [data.imageUrl]).filter(Boolean).slice(0, 6).map((imageUrl) => `<meta itemprop="image" content="${escapeHtml(imageUrl)}" />`).join("\n      ")}
+      <meta itemprop="description" content="${escapeHtml(data.metaDescription)}" />
+      ${data.brand ? `<meta itemprop="brand" content="${escapeHtml(data.brand)}" />` : ""}
+      <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+        <meta itemprop="url" content="${escapeHtml(data.affiliateUrl)}" />
+        <meta itemprop="price" content="${escapeHtml(price)}" />
+        <meta itemprop="priceCurrency" content="${escapeHtml(currency)}" />
+        <meta itemprop="availability" content="https://schema.org/${escapeHtml(availability)}" />
+      </div>
+    </div>
     <div class="page-shell">
       <header class="site-header">
         <div class="container nav-wrap">
@@ -1077,6 +1115,52 @@ function extractAmazonPrice(html) {
   }
 
   return "";
+}
+
+function extractAmazonAvailability(html) {
+  const availabilityBlock =
+    html.match(/<div[^>]+id="availability"[\s\S]*?<\/div>/i)?.[0] ||
+    html.match(/<span[^>]+class="[^"]*\ba-size-medium\b[^"]*"[^>]*>\s*([^<]*(?:currently unavailable|out of stock)[^<]*)<\/span>/i)?.[0] ||
+    "";
+
+  return /currently unavailable|out of stock/i.test(availabilityBlock) ? "OutOfStock" : "InStock";
+}
+
+function normalizePublisherPrice(value) {
+  const normalized = String(value || "").replace(/[$,\s]/g, "");
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+    return "";
+  }
+
+  const price = Number(normalized);
+  return Number.isFinite(price) && price > 0 ? price.toFixed(2) : "";
+}
+
+function normalizePinterestAvailability(value) {
+  const normalized = String(value || "").replace(/\s+/g, "").toLowerCase();
+  const map = {
+    instock: "InStock",
+    available: "InStock",
+    onlineonly: "OnlineOnly",
+    outofstock: "OutOfStock",
+    unavailable: "OutOfStock",
+    preorder: "PreOrder",
+    discontinued: "Discontinued",
+  };
+
+  return map[normalized] || "InStock";
+}
+
+function pinterestAvailabilityLabel(value) {
+  const map = {
+    InStock: "instock",
+    OnlineOnly: "instock",
+    OutOfStock: "out of stock",
+    PreOrder: "preorder",
+    Discontinued: "discontinued",
+  };
+
+  return map[normalizePinterestAvailability(value)] || "instock";
 }
 
 async function readOpenRouterError(response) {

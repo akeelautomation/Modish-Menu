@@ -27,12 +27,18 @@
         <form id="productForm" class="panel">
           <div class="panel__head">
             <h2>Inputs</h2>
-            <p>Only the product link and at least one image URL are required.</p>
+            <p>Product link, Pinterest price, and at least one image URL are required.</p>
           </div>
 
           <label class="field">
             <span>Product link</span>
             <input id="affiliateUrl" name="affiliateUrl" type="url" required placeholder="https://amzn.to/..." />
+          </label>
+
+          <label class="field">
+            <span>Pinterest price (USD)</span>
+            <input id="price" name="price" type="text" inputmode="decimal" placeholder="29.99" />
+            <small class="field__hint">Required for Pinterest Product Rich Pins. If Amazon detection works, this can stay blank.</small>
           </label>
 
           <label class="field">
@@ -69,6 +75,15 @@
             <label class="field">
               <span>Image alt text</span>
               <input id="altText" name="altText" type="text" placeholder="Optional custom alt text" />
+            </label>
+            <label class="field">
+              <span>Pinterest availability</span>
+              <select id="availability" name="availability">
+                <option value="InStock">In stock</option>
+                <option value="OutOfStock">Out of stock</option>
+                <option value="PreOrder">Preorder</option>
+                <option value="Discontinued">Discontinued</option>
+              </select>
             </label>
           </details>
 

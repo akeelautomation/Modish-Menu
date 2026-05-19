@@ -60,6 +60,8 @@ function formPayload() {
     imageUrl: imageUrls[0] || "",
     imageUrls,
     sectionId: data.get("sectionId")?.trim(),
+    price: data.get("price")?.trim(),
+    availability: data.get("availability")?.trim(),
     shortTitle: data.get("shortTitle")?.trim(),
     cardCopy: data.get("cardCopy")?.trim(),
     pageSummary: data.get("pageSummary")?.trim(),
@@ -112,7 +114,9 @@ function renderAnalysis(analysis) {
   els.previewTitle.textContent = analysis.shortTitle;
   els.previewSection.textContent = `Section: ${analysis.sectionLabel}`;
   els.previewAsin.textContent = analysis.asin ? `ASIN: ${analysis.asin}` : "ASIN: not detected";
-  els.previewPrice.textContent = analysis.price ? `Price found: $${analysis.price}` : "Price not detected";
+  els.previewPrice.textContent = analysis.price
+    ? `Pinterest price: $${analysis.price} (${analysis.availabilityLabel || analysis.availability})`
+    : "Pinterest price missing";
   els.previewFile.textContent = analysis.pageFile;
   els.previewUrl.textContent = analysis.productUrl;
   els.openProductUrl.href = analysis.productUrl;

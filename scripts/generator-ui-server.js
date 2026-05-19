@@ -931,7 +931,7 @@ function renderAffiliateProductPage(data) {
     <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body class="product-page">
     <div class="page-shell">
       <header class="site-header">
         <div class="container nav-wrap">

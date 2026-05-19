@@ -218,8 +218,9 @@ textarea {
 .previewCard img {
   width: 100%;
   aspect-ratio: 1;
+  padding: 12px;
   border-radius: 18px;
-  object-fit: cover;
+  object-fit: contain;
   background: #fff;
 }
 

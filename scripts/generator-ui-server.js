@@ -915,7 +915,7 @@ function renderAffiliateProductPage(data) {
     brand: productBrand ? { "@type": "Brand", name: productBrand } : undefined,
     offers: {
       "@type": "Offer",
-      url: data.affiliateUrl,
+      url: data.productUrl,
       itemCondition: "https://schema.org/NewCondition",
       availability: `https://schema.org/${availability}`,
       priceCurrency: currency,

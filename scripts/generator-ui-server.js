@@ -928,7 +928,8 @@ function renderAffiliateProductPage(data) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex,follow" />
+    <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
+    <meta name="robots" content="index,follow" />
     <meta name="color-scheme" content="light" />
     <meta name="p:domain_verify" content="${escapeHtml(PINTEREST_DOMAIN_VERIFY)}" />
     <meta name="description" content="${escapeHtml(data.metaDescription)}" />

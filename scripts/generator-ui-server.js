@@ -929,7 +929,7 @@ function renderAffiliateProductPage(data) {
     <script type="application/ld+json">${JSON.stringify(productJson).replace(/<\/script/gi, "<\\/script")}</script>
     <title>${escapeHtml(data.shortTitle)} | Modish Menu</title>
     <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=20260519-product-images" />
   </head>
   <body class="product-page">
     <div class="page-shell">

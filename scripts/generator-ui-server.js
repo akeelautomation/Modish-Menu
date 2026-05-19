@@ -656,7 +656,7 @@ async function analyzeAffiliatePublisherInput(input) {
     availability,
     availabilityLabel: pinterestAvailabilityLabel(availability),
     pageFile,
-    productUrl: toPublicUrl(pageFile),
+    productUrl: toPublicProductUrl(pageFile),
     metaDescription: truncateText(`${shortTitle}. ${cardCopy}`, 158),
     ogTitle: `${shortTitle} | Modish Menu`,
     ogDescription: pageSummary,
@@ -691,7 +691,7 @@ function publishAffiliatePick(analysis) {
   const finalAnalysis = {
     ...analysis,
     pageFile,
-    productUrl: toPublicUrl(pageFile),
+    productUrl: toPublicProductUrl(pageFile),
   };
 
   fs.writeFileSync(path.join(ROOT_DIR, pageFile), renderAffiliateProductPage(finalAnalysis), "utf8");
@@ -933,7 +933,7 @@ function renderAffiliateProductPage(data) {
     <meta name="p:domain_verify" content="${escapeHtml(PINTEREST_DOMAIN_VERIFY)}" />
     <meta name="description" content="${escapeHtml(data.metaDescription)}" />
     <meta property="og:type" content="product" />
-    <meta property="og:site_name" content="Modish Menu" />
+    <meta property="og:site_name" content="MODISH MENU" />
     <meta property="og:url" content="${escapeHtml(data.productUrl)}" />
     <meta property="og:title" content="${escapeHtml(data.ogTitle)}" />
     <meta property="og:description" content="${escapeHtml(data.ogDescription)}" />
@@ -953,8 +953,7 @@ ${productBrandMeta}    <meta property="product:condition" content="new" />
     <meta name="twitter:description" content="${escapeHtml(data.twitterDescription)}" />
     <meta name="twitter:image" content="${escapeHtml(imageUrl)}" />
     <script type="application/ld+json">${JSON.stringify(productJson, null, 8).replace(/<\/script/gi, "<\\/script")}</script>
-    <title>${escapeHtml(data.shortTitle)} | Modish Menu</title>
-    <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
+    <title>MODISH MENU | ${escapeHtml(data.shortTitle)}</title>
     <link rel="stylesheet" href="style.css?v=20260519-product-images" />
   </head>
   <body class="product-page">
@@ -983,7 +982,16 @@ ${productBrandMeta}    <meta property="product:condition" content="new" />
                 </div>
                 <a class="button button-dark" href="${escapeHtml(data.affiliateUrl)}" target="_blank" rel="noopener noreferrer nofollow sponsored">${escapeHtml(data.priceLabel)}</a>
               </div>
-              <img class="picks-hero-image" src="${escapeHtml(data.imageUrl)}" alt="${escapeHtml(data.altText)}" />
+              <img
+                class="picks-hero-image"
+                src="${escapeHtml(data.imageUrl)}"
+                alt="${escapeHtml(data.altText)}"
+                loading="eager"
+                decoding="async"
+                referrerpolicy="no-referrer"
+                data-gallery-main
+                onerror="this.src='https://placehold.co/600x400?text=Product+Image+Coming+Soon'"
+              />
             </div>
           </div>
         </section>
@@ -1342,6 +1350,11 @@ function toPublicUrl(fileName) {
   return `${SITE_URL}/${normalized}`;
 }
 
+function toPublicProductUrl(fileName) {
+  const normalized = String(fileName || "").replace(/^\/+/, "").replace(/\.html$/i, "");
+  return `${SITE_URL}/${normalized}`;
+}
+
 function createKitchenPick(payload) {
   const data = readKitchenPicksData();
   const pick = normalizeKitchenPickPayload(payload);
@@ -1444,7 +1457,7 @@ function normalizeKitchenPickPayload(payload, existingPick = {}) {
   const linkUrl = cleanText(payload.linkUrl, existingPick.linkUrl || "");
   const inferredPageFile = inferKitchenPickPageFile(existingPick.id || payload.id || slugify(title));
   const pageFile = cleanText(payload.pageFile, existingPick.pageFile || inferredPageFile);
-  const productUrl = cleanText(payload.productUrl, existingPick.productUrl || (pageFile ? toPublicUrl(pageFile) : ""));
+  const productUrl = cleanText(payload.productUrl, existingPick.productUrl || (pageFile ? toPublicProductUrl(pageFile) : ""));
   const buttonText = cleanText(payload.buttonText, existingPick.buttonText || "See Options");
   const id = existingPick.id || cleanText(payload.id, "");
 

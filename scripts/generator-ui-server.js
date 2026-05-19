@@ -898,12 +898,11 @@ function renderAffiliateProductPage(data) {
   const currency = cleanText(data.currency, "USD").toUpperCase();
   const availability = normalizePinterestAvailability(data.availability);
   const pinterestAvailability = pinterestAvailabilityLabel(availability);
-  const brandMeta = data.brand ? `    <meta property="og:brand" content="${escapeHtml(data.brand)}" />\n` : "";
-  const productImagesMeta = (data.imageUrls || [data.imageUrl])
-    .filter(Boolean)
-    .slice(0, 6)
-    .map((imageUrl) => `    <meta property="og:image" content="${escapeHtml(imageUrl)}" />`)
-    .join("\n");
+  const imageUrl = (data.imageUrls || [data.imageUrl]).filter(Boolean)[0] || data.imageUrl;
+  const imageSize = inferProductImageSize(imageUrl);
+  const retailerItemId = cleanText(data.asin, path.basename(data.pageFile || "", ".html"));
+  const productBrand = cleanText(data.brand, inferProductBrand(data.shortTitle || data.fullTitle));
+  const productBrandMeta = productBrand ? `    <meta property="product:brand" content="${escapeHtml(productBrand)}" />\n` : "";
   const productJson = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -912,7 +911,7 @@ function renderAffiliateProductPage(data) {
     image: data.imageUrls,
     description: data.metaDescription,
     sku: data.asin || data.pageFile,
-    brand: data.brand ? { "@type": "Brand", name: data.brand } : undefined,
+    brand: productBrand ? { "@type": "Brand", name: productBrand } : undefined,
     offers: {
       "@type": "Offer",
       url: data.affiliateUrl,
@@ -929,40 +928,34 @@ function renderAffiliateProductPage(data) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta name="color-scheme" content="light" />
     <meta name="description" content="${escapeHtml(data.metaDescription)}" />
     <meta property="og:type" content="product" />
     <meta property="og:site_name" content="Modish Menu" />
     <meta property="og:url" content="${escapeHtml(data.productUrl)}" />
     <meta property="og:title" content="${escapeHtml(data.ogTitle)}" />
     <meta property="og:description" content="${escapeHtml(data.ogDescription)}" />
-${productImagesMeta}
+    <meta property="og:image" content="${escapeHtml(imageUrl)}" />
+    <meta property="og:image:secure_url" content="${escapeHtml(imageUrl)}" />
+    <meta property="og:image:alt" content="${escapeHtml(data.altText)}" />
+    <meta property="og:image:width" content="${imageSize.width}" />
+    <meta property="og:image:height" content="${imageSize.height}" />
+    <meta property="product:retailer_item_id" content="${escapeHtml(retailerItemId)}" />
+${productBrandMeta}    <meta property="product:condition" content="new" />
+    <meta property="product:availability" content="${escapeHtml(pinterestAvailability)}" />
     <meta property="product:price:amount" content="${escapeHtml(price)}" />
     <meta property="product:price:currency" content="${escapeHtml(currency)}" />
-    <meta property="og:availability" content="${escapeHtml(pinterestAvailability)}" />
-${brandMeta}    <meta property="og:availability:destinations" content="US" />
+
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escapeHtml(data.ogTitle)}" />
     <meta name="twitter:description" content="${escapeHtml(data.twitterDescription)}" />
-    <meta name="twitter:image" content="${escapeHtml(data.imageUrl)}" />
-    <script type="application/ld+json">${JSON.stringify(productJson).replace(/<\/script/gi, "<\\/script")}</script>
+    <meta name="twitter:image" content="${escapeHtml(imageUrl)}" />
+    <script type="application/ld+json">${JSON.stringify(productJson, null, 8).replace(/<\/script/gi, "<\\/script")}</script>
     <title>${escapeHtml(data.shortTitle)} | Modish Menu</title>
     <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
     <link rel="stylesheet" href="style.css?v=20260519-product-images" />
   </head>
   <body class="product-page">
-    <div hidden itemscope itemtype="https://schema.org/Product">
-      <meta itemprop="name" content="${escapeHtml(data.fullTitle)}" />
-      <meta itemprop="url" content="${escapeHtml(data.productUrl)}" />
-      ${(data.imageUrls || [data.imageUrl]).filter(Boolean).slice(0, 6).map((imageUrl) => `<meta itemprop="image" content="${escapeHtml(imageUrl)}" />`).join("\n      ")}
-      <meta itemprop="description" content="${escapeHtml(data.metaDescription)}" />
-      ${data.brand ? `<meta itemprop="brand" content="${escapeHtml(data.brand)}" />` : ""}
-      <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
-        <meta itemprop="url" content="${escapeHtml(data.affiliateUrl)}" />
-        <meta itemprop="price" content="${escapeHtml(price)}" />
-        <meta itemprop="priceCurrency" content="${escapeHtml(currency)}" />
-        <meta itemprop="availability" content="https://schema.org/${escapeHtml(availability)}" />
-      </div>
-    </div>
     <div class="page-shell">
       <header class="site-header">
         <div class="container nav-wrap">
@@ -1161,6 +1154,24 @@ function pinterestAvailabilityLabel(value) {
   };
 
   return map[normalizePinterestAvailability(value)] || "instock";
+}
+
+function inferProductImageSize(imageUrl) {
+  const token = String(imageUrl || "").match(/_AC_S(?:L|X|Y)(\d+)_|_S(?:L|X|Y)(\d+)_/i);
+  const size = Number(token?.[1] || token?.[2] || 1500);
+  const normalized = Number.isFinite(size) && size > 0 ? size : 1500;
+
+  return {
+    width: normalized,
+    height: normalized,
+  };
+}
+
+function inferProductBrand(title) {
+  return cleanText(String(title || "").split(/[,|:-]/)[0], "")
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(" ");
 }
 
 async function readOpenRouterError(response) {

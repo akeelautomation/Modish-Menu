@@ -56,7 +56,7 @@ const loadEnvFile = (filePath) => {
 
 loadEnvFile(ENV_PATH);
 
-const SITE_URL = (process.env.SITE_URL || "https://modish-menu.pages.dev").replace(/\/+$/, "");
+const SITE_URL = (process.env.SITE_URL || "https://modish-menu.com").replace(/\/+$/, "");
 
 const escapeHtml = (value) =>
   String(value)
@@ -590,18 +590,23 @@ const renderSitemap = (catalog) => {
     "index.html",
     "recipes.html",
     "categories.html",
+    "kitchen-picks.html",
     "about.html",
     "contact.html",
     "privacy-policy.html",
     "terms.html",
   ];
+  const productPages = fs
+    .readdirSync(ROOT_DIR)
+    .filter((fileName) => /^pick-.+\.html$/i.test(fileName))
+    .sort();
   const recipePages = Object.keys(catalog).map((slug) => `recipes/${slug}.html`);
   const today = new Date().toISOString().slice(0, 10);
-  const urls = [...staticPages, ...recipePages]
+  const urls = [...staticPages, ...productPages, ...recipePages]
     .filter((pagePath) => fs.existsSync(path.join(ROOT_DIR, pagePath)))
     .map(
       (pagePath) => `  <url>
-    <loc>${escapeHtml(absoluteUrl(`/${pagePath}`))}</loc>
+    <loc>${escapeHtml(absoluteUrl(pagePath === "index.html" ? "/" : `/${pagePath.replace(/\.html$/i, "")}`))}</loc>
     <lastmod>${today}</lastmod>
   </url>`
     )

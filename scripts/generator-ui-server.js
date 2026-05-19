@@ -907,6 +907,7 @@ function renderAffiliateProductPage(data) {
   const retailerItemId = cleanText(data.asin, path.basename(data.pageFile || "", ".html"));
   const productBrand = cleanText(data.brand, inferProductBrand(data.shortTitle || data.fullTitle));
   const productBrandMeta = productBrand ? `    <meta property="product:brand" content="${escapeHtml(productBrand)}" />\n` : "";
+  const ogBrandMeta = productBrand ? `    <meta property="og:brand" content="${escapeHtml(productBrand)}" />\n` : "";
   const productJson = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -931,10 +932,11 @@ function renderAffiliateProductPage(data) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex,follow" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
     <meta name="color-scheme" content="light" />
     <meta name="p:domain_verify" content="${escapeHtml(PINTEREST_DOMAIN_VERIFY)}" />
     <meta name="description" content="${escapeHtml(data.metaDescription)}" />
+    <link rel="canonical" href="${escapeHtml(data.productUrl)}" />
     <meta property="og:type" content="product" />
     <meta property="og:site_name" content="MODISH MENU" />
     <meta property="og:url" content="${escapeHtml(data.productUrl)}" />
@@ -945,6 +947,8 @@ function renderAffiliateProductPage(data) {
     <meta property="og:image:alt" content="${escapeHtml(data.altText)}" />
     <meta property="og:image:width" content="${imageSize.width}" />
     <meta property="og:image:height" content="${imageSize.height}" />
+${ogBrandMeta}    <meta property="og:availability" content="${escapeHtml(pinterestAvailability)}" />
+    <meta property="og:availability:destinations" content="US" />
     <meta property="product:retailer_item_id" content="${escapeHtml(retailerItemId)}" />
 ${productBrandMeta}    <meta property="product:condition" content="new" />
     <meta property="product:availability" content="${escapeHtml(pinterestAvailability)}" />
@@ -959,55 +963,74 @@ ${productBrandMeta}    <meta property="product:condition" content="new" />
     <title>MODISH MENU | ${escapeHtml(data.shortTitle)}</title>
     <link rel="stylesheet" href="style.css?v=20260519-product-images" />
   </head>
-  <body class="product-page">
-    <div class="page-shell">
-      <header class="site-header">
-        <div class="container nav-wrap">
-          <a class="brand" href="index.html">Modish Menu</a>
-          <nav class="site-nav" aria-label="Primary">
-            <a class="nav-link" href="index.html">Home</a>
-            <a class="nav-link" href="recipes.html">Recipes</a>
-            <a class="nav-link is-current" href="kitchen-picks.html">Kitchen Picks</a>
-          </nav>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+    <header class="top">
+      <a class="brand" href="index.html" aria-label="MODISH MENU home">
+        <span class="brand__mark" aria-hidden="true">MM</span>
+        <span class="brand__word">MODISH MENU</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a class="nav__link" href="index.html">Home</a>
+        <a class="nav__link" href="recipes.html">Recipes</a>
+        <a class="nav__link nav__link--active" href="kitchen-picks.html">Kitchen Picks</a>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section class="page">
+        <div class="pageHead">
+          <div class="pageHead__kicker">Kitchen Pick</div>
+          <h1 class="pageHead__title">${escapeHtml(data.shortTitle)}</h1>
+          <p class="pageHead__sub">${escapeHtml(data.pageSummary)}</p>
+          <div class="notice">
+            <span class="notice__k">Note</span>
+            <span class="notice__v">This page contains affiliate links. If you buy through them, we may earn a commission at no extra cost to you.</span>
+          </div>
         </div>
-      </header>
-      <main>
-        <section class="picks-hero">
-          <div class="container">
-            <div class="picks-hero-grid">
-              <div class="picks-hero-copy">
-                <span class="eyebrow">Kitchen Pick</span>
-                <h1 class="section-heading">${escapeHtml(data.shortTitle)}</h1>
-                <p class="section-copy">${escapeHtml(data.pageSummary)}</p>
-                <div class="picks-disclosure">
-                  <span>Note</span>
-                  Some outbound shopping links may earn Modish Menu a commission at no extra cost to you.
-                </div>
-                <a class="button button-dark" href="${escapeHtml(data.affiliateUrl)}" target="_blank" rel="noopener noreferrer nofollow sponsored">${escapeHtml(data.priceLabel)}</a>
-              </div>
-              <img
-                class="picks-hero-image"
-                src="${escapeHtml(data.imageUrl)}"
-                alt="${escapeHtml(data.altText)}"
-                loading="eager"
-                decoding="async"
-                referrerpolicy="no-referrer"
-                data-gallery-main
-                onerror="this.src='https://placehold.co/600x400?text=Product+Image+Coming+Soon'"
-              />
+
+        <section class="pickDetail" aria-label="Product details" itemscope itemtype="https://schema.org/Product">
+          <meta itemprop="name" content="${escapeHtml(data.fullTitle)}" />
+          <meta itemprop="url" content="${escapeHtml(data.productUrl)}" />
+          <meta itemprop="image" content="${escapeHtml(imageUrl)}" />
+          <meta itemprop="description" content="${escapeHtml(data.metaDescription)}" />
+          <meta itemprop="sku" content="${escapeHtml(retailerItemId)}" />
+          ${productBrand ? `<meta itemprop="brand" content="${escapeHtml(productBrand)}" />` : ""}
+          <div itemprop="offers" itemscope itemtype="https://schema.org/Offer" hidden>
+            <meta itemprop="url" content="${escapeHtml(data.affiliateUrl)}" />
+            <meta itemprop="price" content="${escapeHtml(price)}" />
+            <meta itemprop="priceCurrency" content="${escapeHtml(currency)}" />
+            <meta itemprop="availability" content="https://schema.org/${escapeHtml(availability)}" />
+            <meta itemprop="itemCondition" content="https://schema.org/NewCondition" />
+          </div>
+          <div class="pickDetail__media">
+            <img
+              class="pickDetail__img"
+              src="${escapeHtml(data.imageUrl)}"
+              alt="${escapeHtml(data.altText)}"
+              loading="eager"
+              decoding="async"
+              referrerpolicy="no-referrer"
+              data-gallery-main
+              onerror="this.src='https://placehold.co/600x400?text=Product+Image+Coming+Soon'"
+            />
+          </div>
+          <div class="pickDetail__panel">
+            <div class="pickDetail__priceRow">
+              <div class="pickDetail__meta">ASIN ${escapeHtml(retailerItemId)}</div>
             </div>
+            <div class="pickDetail__notes">
+${renderAffiliateReviewDetailMarkup(data.review)}
+            </div>
+            <div class="actions actions--spread">
+              <a class="btn" href="kitchen-picks.html">Back to Kitchen Picks</a>
+              <a class="btn btn--primary" href="${escapeHtml(data.affiliateUrl)}" target="_blank" rel="noopener noreferrer nofollow sponsored">${escapeHtml(data.priceLabel)}</a>
+            </div>
+            <div class="finePrint">Availability and pricing can change at any time. Check Amazon for the latest details before buying.</div>
           </div>
         </section>
-        <section class="pick-zone">
-          <div class="container">
-            <div class="pick-grid pick-grid-compact">
-${renderAffiliateReviewMarkup(data.review)}
-            </div>
-            <p class="section-copy">Pricing and availability can change. Check the product page for the latest details before buying.</p>
-          </div>
-        </section>
-      </main>
-    </div>
+      </section>
+    </main>
   </body>
 </html>
 `;
@@ -1026,6 +1049,22 @@ function renderAffiliateReviewMarkup(review) {
                   ${body}
                 </div>
               </article>`;
+  }).join("\n");
+}
+
+function renderAffiliateReviewDetailMarkup(review) {
+  return AFFILIATE_REVIEW_FIELDS.map((field) => {
+    const value = review[field.key];
+    const body = field.type === "list"
+      ? `              <ul class="pickDetail__list">
+${(value || []).map((item) => `                <li>${escapeHtml(item)}</li>`).join("\n")}
+              </ul>`
+      : `              <p class="pickDetail__sectionCopy">${escapeHtml(value || "")}</p>`;
+    const modifier = field.type === "list" ? " pickDetail__section--list" : "";
+    return `            <section class="pickDetail__section${modifier}">
+              <h2 class="pickDetail__sectionTitle">${escapeHtml(field.label)}</h2>
+${body}
+            </section>`;
   }).join("\n");
 }
 
@@ -1346,7 +1385,7 @@ function cleanGeneratedList(values, minimum, maximum) {
   const cleaned = [];
 
   source.forEach((item) => {
-    const normalized = cleanText(String(item || "").replace(/^[\-*\d.)\s]+/, ""), "");
+    const normalized = cleanText(String(item || "").replace(/^\s*(?:[-*]\s+|\d+[.)]\s+)/, ""), "");
     if (normalized && !cleaned.includes(normalized) && cleaned.length < maximum) {
       cleaned.push(normalized);
     }
@@ -1573,8 +1612,9 @@ function findMatchingClosingDiv(html, divStart) {
 }
 
 function renderKitchenPickCard(pick) {
-  const detailsLink = pick.pageFile
-    ? `<a class="button button-secondary" href="${escapeHtml(pick.pageFile)}">Details</a>`
+  const detailsHref = pick.productUrl || (pick.pageFile ? toPublicProductUrl(pick.pageFile) : "");
+  const detailsLink = detailsHref
+    ? `<a class="button button-secondary" href="${escapeHtml(detailsHref)}">Details</a>`
     : "";
 
   return `              <article class="product-pick-card">

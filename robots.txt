@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /admin/
 
-Sitemap: https://modish-menu.pages.dev/sitemap.xml
+Sitemap: https://modish-menu.com/sitemap.xml

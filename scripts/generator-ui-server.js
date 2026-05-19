@@ -20,6 +20,7 @@ const OPENROUTER_API_URL = process.env.OPENROUTER_API_BASE_URL || "https://openr
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash-lite";
 const OPENROUTER_REFERER = process.env.OPENROUTER_HTTP_REFERER || SITE_URL;
 const OPENROUTER_TITLE = "Modish Menu Product Publisher";
+const PINTEREST_DOMAIN_VERIFY = process.env.PINTEREST_DOMAIN_VERIFY || "9c6037d438a25ef0f7bd7f38b3ce4d23";
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_KEYWORD_GUIDANCE_CHARS = 1200;
 const DEFAULT_GENERATOR_TIMEOUT_MS = 45 * 60 * 1000;
@@ -927,8 +928,9 @@ function renderAffiliateProductPage(data) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta name="robots" content="noindex,follow" />
     <meta name="color-scheme" content="light" />
+    <meta name="p:domain_verify" content="${escapeHtml(PINTEREST_DOMAIN_VERIFY)}" />
     <meta name="description" content="${escapeHtml(data.metaDescription)}" />
     <meta property="og:type" content="product" />
     <meta property="og:site_name" content="Modish Menu" />

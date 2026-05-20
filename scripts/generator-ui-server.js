@@ -21,6 +21,16 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flas
 const OPENROUTER_REFERER = process.env.OPENROUTER_HTTP_REFERER || SITE_URL;
 const OPENROUTER_TITLE = "Modish Menu Product Publisher";
 const PINTEREST_DOMAIN_VERIFY = process.env.PINTEREST_DOMAIN_VERIFY || "9c6037d438a25ef0f7bd7f38b3ce4d23";
+const GOOGLE_ANALYTICS_TAG = `    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-QH6QS10WB7"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-QH6QS10WB7');
+    </script>
+`;
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_KEYWORD_GUIDANCE_CHARS = 1200;
 const DEFAULT_GENERATOR_TIMEOUT_MS = 45 * 60 * 1000;
@@ -930,6 +940,7 @@ function renderAffiliateProductPage(data) {
   return `<!doctype html>
 <html lang="en">
   <head>
+${GOOGLE_ANALYTICS_TAG}
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="index,follow,max-image-preview:large" />

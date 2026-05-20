@@ -13,6 +13,16 @@ const recipeTemplatePath = path.join(ROOT_DIR, "recipe.html");
 const recipesDir = path.join(ROOT_DIR, "recipes");
 const sitemapPath = path.join(ROOT_DIR, "sitemap.xml");
 const HOMEPAGE_RECIPE_LIMIT = 21;
+const GOOGLE_ANALYTICS_TAG = `    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-QH6QS10WB7"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-QH6QS10WB7');
+    </script>
+`;
 const CATEGORY_NAMES = [
   "Breakfast",
   "Lunch",
@@ -439,6 +449,7 @@ const renderCategoryButtons = () =>
 const renderRecipesDirectoryPage = (catalog) => `<!DOCTYPE html>
 <html lang="en">
   <head>
+${GOOGLE_ANALYTICS_TAG}
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Recipes | Modish Menu</title>
